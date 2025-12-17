@@ -23,6 +23,10 @@ args = [
     # On Windows separator is ;, on Linux :
     f"--add-data={templates_path}{os.pathsep}src/web/templates",
     f"--add-data={static_path}{os.pathsep}src/web/static",
+    f"--add-data=app_icon.png{os.pathsep}.",  # Add icon to root of bundle for pywebview
+
+    "--icon=app_icon.ico",
+    "--splash=splash.png",
 
     # Hidden imports often missed by analysis
     "--hidden-import=uvicorn.logging",

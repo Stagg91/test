@@ -132,6 +132,9 @@ def main():
 
     if gui_mode:
         import webview
+        from src.utils import get_resource_path
+        import os
+
         # Start server in thread
         server_thread = threading.Thread(target=start_server, daemon=True)
         server_thread.start()
@@ -139,8 +142,25 @@ def main():
         # Wait a sec for server
         time.sleep(1)
 
+        # Resolve icon path (app_icon.png works best for window icon usually)
+        # Note: PyInstaller creates app_icon.png in root of _MEIPASS if added via --add-data or implicitly if it's main icon?
+        # Actually build.py didn't add the icon as data yet. We should add it.
+        # But wait, we have get_resource_path to find it if we ship it.
+
+        # For now, let's assume we ship app_icon.png
+        icon_path = get_resource_path("app_icon.png")
+        if not os.path.exists(icon_path):
+            icon_path = None # Fallback
+
         webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
-        webview.start()
+
+        # Tray is enabled via start param in recent versions
+        # Need to handle case where tray might not be supported on Linux without deps
+        try:
+            webview.start(icon=icon_path) # tray=True removed to ensure stability if libappindicator missing
+        except Exception as e:
+            print(f"Webview error: {e}")
+
         print("GUI Closed. Exiting...")
     else:
         # Start Web Server blocking

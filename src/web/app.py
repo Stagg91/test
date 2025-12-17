@@ -20,6 +20,7 @@ from src.ai_sentiment import AISentimentAgent
 
 from src.auth import verify_password, get_password_hash, create_access_token, decode_token, create_magic_token
 from src.notifications import NotificationManager
+from src.utils import get_resource_path
 import qrcode
 import io
 import base64
@@ -30,9 +31,12 @@ init_db()
 app = FastAPI()
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
+static_path = get_resource_path("src/web/static")
+templates_path = get_resource_path("src/web/templates")
 
-templates = Jinja2Templates(directory="src/web/templates")
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+templates = Jinja2Templates(directory=templates_path)
 
 def get_db():
     db = SessionLocal()
