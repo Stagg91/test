@@ -54,7 +54,7 @@ def get_db_path():
     Returns the path to the database file.
     Uses AppData/Home directory to ensure write access in frozen mode.
     """
-    app_name = "JulesBot"
+    app_name = "StaggsHecticTrader"
     if sys.platform == "win32":
         app_data = os.getenv("APPDATA")
         path = os.path.join(app_data, app_name)

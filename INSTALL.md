@@ -1,4 +1,4 @@
-# JulesBot Installation Guide
+# Staggs Hectic Trader Installation Guide
 
 ## Standalone Application (Windows/Linux)
 
@@ -14,17 +14,17 @@ You need Python 3.10+ installed to build the app.
 3.  This will:
     *   Install all requirements.
     *   Run PyInstaller to create a single-file executable.
-4.  The output file is `dist\JulesBot.exe`.
+4.  The output file is `dist\StaggsHecticTrader.exe`.
 5.  **Running:**
-    *   To run in **Desktop GUI Mode**: Create a shortcut to the `.exe` and add `--gui` to the Target, or run via command line: `dist\JulesBot.exe --gui`
-    *   To run in **Server Mode** (Headless): Run `dist\JulesBot.exe`. Access via browser at `http://localhost:8000`.
+    *   To run in **Desktop GUI Mode** (System Tray + Browser): Create a shortcut to the `.exe` and add `--gui` to the Target, or run via command line: `dist\StaggsHecticTrader.exe --gui`
+    *   To run in **Server Mode** (Headless): Run `dist\StaggsHecticTrader.exe`. Access via browser at `http://localhost:8000`.
 
 ### Building on Linux
 
 1.  Open Terminal.
 2.  Run `./build_linux.sh`.
-3.  The output file is `dist/JulesBot`.
-4.  **Running:** `./dist/JulesBot --gui`
+3.  The output file is `dist/StaggsHecticTrader`.
+4.  **Running:** `./dist/StaggsHecticTrader --gui`
 
 ## Manual Installation (Source Code)
 
@@ -37,5 +37,5 @@ If you prefer to run from source:
 ## Data Location
 
 The application database `trading_bot.db` is stored in your user data directory to ensure it persists even if you move the executable.
-- **Windows:** `%APPDATA%\JulesBot\trading_bot.db`
-- **Linux:** `~/.julesbot/trading_bot.db`
+- **Windows:** `%APPDATA%\StaggsHecticTrader\trading_bot.db`
+- **Linux:** `~/.staggshectictrader/trading_bot.db`

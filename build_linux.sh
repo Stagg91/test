@@ -2,8 +2,8 @@
 echo "Installing dependencies..."
 pip install -r requirements.txt
 
-echo "Building JulesBot..."
+echo "Building Staggs Hectic Trader..."
 python3 build.py
 
 echo "Build complete!"
-echo "Run with: ./dist/JulesBot --gui"
+echo "Run with: ./dist/StaggsHecticTrader --gui"

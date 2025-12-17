@@ -16,7 +16,7 @@ if not os.path.exists(templates_path):
 # PyInstaller arguments
 args = [
     "main.py",
-    "--name=JulesBot",
+    "--name=StaggsHecticTrader",
     "--onefile",
     "--noconsole",  # Hide console on Windows (use --console for debug)
     # Add data files (Source;Dest)

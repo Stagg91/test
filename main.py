@@ -124,9 +124,9 @@ import traceback
 
 # Setup Paths for Logging
 if sys.platform == "win32":
-    APP_DATA = os.path.join(os.getenv("APPDATA"), "JulesBot")
+    APP_DATA = os.path.join(os.getenv("APPDATA"), "StaggsHecticTrader")
 else:
-    APP_DATA = os.path.join(os.path.expanduser("~"), ".julesbot")
+    APP_DATA = os.path.join(os.path.expanduser("~"), ".staggshectictrader")
 os.makedirs(APP_DATA, exist_ok=True)
 LOG_FILE = os.path.join(APP_DATA, "startup.log")
 
@@ -202,7 +202,7 @@ def main():
     sys.stdout = StartupLogger(sys.stdout, LOG_FILE)
     sys.stderr = StartupLogger(sys.stderr, LOG_FILE)
     print(f"--- LOGGING STARTED at {time.ctime()} ---")
-    print(f"Initializing JulesBot... Logs at {LOG_FILE}")
+    print(f"Initializing Staggs Hectic Trader... Logs at {LOG_FILE}")
 
     try:
         # Start bot thread
@@ -268,6 +268,17 @@ def main():
             def on_open(icon, item):
                 webbrowser.open("http://localhost:8000")
 
+            def on_check_logs(icon, item):
+                try:
+                    # Open the log file
+                    if sys.platform == "win32":
+                        os.startfile(LOG_FILE)
+                    else:
+                        import subprocess
+                        subprocess.call(["xdg-open", LOG_FILE])
+                except Exception as e:
+                    print(f"Could not open logs: {e}")
+
             def on_quit(icon, item):
                 icon.stop()
                 print("Quit requested.")
@@ -276,9 +287,10 @@ def main():
             print("Initializing Tray Icon...")
             menu = pystray.Menu(
                 pystray.MenuItem("Open Dashboard", on_open, default=True),
+                pystray.MenuItem("Check Logs", on_check_logs),
                 pystray.MenuItem("Quit", on_quit)
             )
-            icon = pystray.Icon("JulesBot", image, "JulesBot", menu)
+            icon = pystray.Icon("StaggsHecticTrader", image, "Staggs Hectic Trader", menu)
 
             try:
                 print("Running Tray Loop...")
