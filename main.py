@@ -78,12 +78,28 @@ def bot_loop():
                         if current_size == 0:
                             if rsi < 30 and sentiment_score != "BEARISH":
                                 print("Signal: BUY")
-                                # client.open_trade(symbol, "Buy", 0.001, "Market")
-                                # Commented out to prevent unintended real trades in this demo
+                                if settings.is_active:
+                                    try:
+                                        client.open_trade(symbol, "Buy", 0.001, "Market")
+                                        from src.notifications import NotificationManager
+                                        NotificationManager.send("Trade Executed", f"Bought {symbol} at Market (RSI: {rsi:.2f})")
+                                    except Exception as e:
+                                        print(f"Trade Failed: {e}")
+                                else:
+                                    print("Trading disabled in settings.")
+
                         else:
                             if rsi > 70:
                                 print("Signal: SELL (Close)")
-                                # client.close_position(symbol)
+                                if settings.is_active:
+                                    try:
+                                        client.close_position(symbol)
+                                        from src.notifications import NotificationManager
+                                        NotificationManager.send("Trade Closed", f"Sold {symbol} (RSI: {rsi:.2f})")
+                                    except Exception as e:
+                                        print(f"Close Failed: {e}")
+                                else:
+                                     print("Trading disabled in settings.")
 
             db.close()
         except Exception as e:

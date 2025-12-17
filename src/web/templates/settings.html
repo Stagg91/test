@@ -44,6 +44,14 @@
         </div>
 
         <hr>
+        <h4>Trading Status</h4>
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" name="is_active" value="true" {% if settings and settings.is_active %}checked{% endif %}>
+            <label class="form-check-label text-danger fw-bold">Enable Live Trading (Bot Active)</label>
+            <div class="form-text">If unchecked, the bot will monitor but NOT execute trades.</div>
+        </div>
+
+        <hr>
         <h4>Paper Trading</h4>
         <div class="mb-3 form-check">
             <input type="checkbox" class="form-check-input" name="paper_trading" value="true" {% if settings and settings.paper_trading %}checked{% endif %}>

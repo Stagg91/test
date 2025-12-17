@@ -15,3 +15,7 @@ httpx
 python-multipart
 scikit-learn
 joblib
+passlib[bcrypt]
+pyjwt
+qrcode
+pillow

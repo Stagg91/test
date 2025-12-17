@@ -12,6 +12,21 @@ class Settings(Base):
     gemini_api_key = Column(String, nullable=True)
     paper_trading = Column(Boolean, default=True)
     paper_balance = Column(Float, default=10000.0)
+    is_active = Column(Boolean, default=False)
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True)
+    hashed_password = Column(String)
+
+class Notification(Base):
+    __tablename__ = 'notifications'
+    id = Column(Integer, primary_key=True)
+    title = Column(String)
+    message = Column(String)
+    timestamp = Column(Float)
+    read = Column(Boolean, default=False)
 
 class StrategyConfig(Base):
     __tablename__ = 'strategies'

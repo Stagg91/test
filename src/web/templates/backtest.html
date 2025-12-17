@@ -21,10 +21,23 @@
 <div class="container mt-4">
     <h1>Backtest Strategy</h1>
 
+    <div class="card mb-4 bg-light">
+        <div class="card-body">
+            <h5>AI Strategy Designer</h5>
+            <p>Describe your goal (e.g., "Find the best scalping strategy for ETH") and let AI configure the backtest.</p>
+            <form action="/ai_backtest_config" method="post">
+                <div class="input-group">
+                    <input type="text" name="prompt" class="form-control" placeholder="Describe strategy...">
+                    <button class="btn btn-success" type="submit">Auto-Configure</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <form action="/run_backtest" method="post" target="results_frame">
         <div class="mb-3">
             <label class="form-label">Symbol</label>
-            <input type="text" name="symbol" class="form-control" value="BTCUSDT">
+            <input type="text" name="symbol" class="form-control" value="{{ config.symbol if config else 'BTCUSDT' }}">
         </div>
 
         <div class="mb-3">
@@ -44,7 +57,7 @@
         </div>
 
         <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" checked>
+            <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" {% if not config or config.rsi_enabled %}checked{% endif %}>
             <label class="form-check-label">Enable RSI Strategy</label>
         </div>
 
@@ -52,20 +65,20 @@
         <div class="row mb-3">
             <div class="col">
                 <label>Lower Bound Start</label>
-                <input type="number" name="rsi_lower_start" class="form-control" value="20">
+                <input type="number" name="rsi_lower_start" class="form-control" value="{{ config.rsi_lower_start if config else 20 }}">
             </div>
             <div class="col">
                 <label>Lower Bound Stop</label>
-                <input type="number" name="rsi_lower_stop" class="form-control" value="40">
+                <input type="number" name="rsi_lower_stop" class="form-control" value="{{ config.rsi_lower_stop if config else 40 }}">
             </div>
             <div class="col">
                 <label>Lower Bound Step</label>
-                <input type="number" name="rsi_lower_step" class="form-control" value="5">
+                <input type="number" name="rsi_lower_step" class="form-control" value="{{ config.rsi_lower_step if config else 5 }}">
             </div>
         </div>
 
         <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="macd_enabled" value="true">
+            <input class="form-check-input" type="checkbox" name="macd_enabled" value="true" {% if config and config.macd_enabled %}checked{% endif %}>
             <label class="form-check-label">Enable MACD (Signal Crossover)</label>
         </div>
 

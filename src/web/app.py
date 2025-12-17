@@ -1,12 +1,12 @@
-from fastapi import FastAPI, Request, Form, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, Form, Depends, Response, Cookie
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import pandas as pd
 import json
 
-from src.database import SessionLocal, engine, Settings, init_db
+from src.database import SessionLocal, engine, Settings, init_db, User
 from src.bybit_client import BybitClient
 from src.data_engine import DataEngine
 from src.indicators import IndicatorEngine
@@ -17,6 +17,12 @@ try:
 except ImportError:
     MLEngine = None
 from src.ai_sentiment import AISentimentAgent
+
+from src.auth import verify_password, get_password_hash, create_access_token, decode_token, create_magic_token
+from src.notifications import NotificationManager
+import qrcode
+import io
+import base64
 
 # Init DB
 init_db()
@@ -35,6 +41,104 @@ def get_db():
     finally:
         db.close()
 
+def get_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    user = decode_token(token)
+    return user
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Allow static resources and specific pages
+    if request.url.path in ["/login", "/setup", "/manifest.json", "/sw.js"] or request.url.path.startswith("/static"):
+        return await call_next(request)
+
+    # Check if any user exists
+    db = SessionLocal()
+    user_count = db.query(User).count()
+    db.close()
+
+    if user_count == 0:
+         return RedirectResponse(url="/setup")
+
+    token = request.cookies.get("access_token")
+    if not token or not decode_token(token):
+        return RedirectResponse(url="/login")
+
+    return await call_next(request)
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login")
+async def login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verify_password(password, user.hashed_password):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid credentials"})
+
+    token = create_access_token({"sub": user.username})
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(key="access_token", value=token, httponly=True)
+    return response
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("access_token")
+    return response
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request):
+    return templates.TemplateResponse("setup.html", {"request": request})
+
+@app.post("/setup")
+async def setup(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    if db.query(User).count() > 0:
+        return RedirectResponse(url="/login", status_code=303)
+
+    hashed_pw = get_password_hash(password)
+    new_user = User(username=username, hashed_password=hashed_pw)
+    db.add(new_user)
+    db.commit()
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/connect_mobile", response_class=HTMLResponse)
+async def connect_mobile(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+
+    # Generate Magic Token
+    magic_token = create_magic_token({"sub": user['sub']})
+
+    # Generate QR
+    host_url = str(request.base_url).rstrip('/')
+    # Magic Login URL
+    data = f"{host_url}/magic_login?token={magic_token}"
+
+    img = qrcode.make(data)
+    buf = io.BytesIO()
+    img.save(buf)
+    qr_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    return templates.TemplateResponse("connect.html", {"request": request, "qr_base64": qr_b64})
+
+@app.get("/magic_login")
+async def magic_login(token: str):
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "magic":
+        return HTMLResponse("Invalid or expired magic link.", status_code=400)
+
+    # Create long-lived access token
+    access_token = create_access_token({"sub": payload['sub']})
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(key="access_token", value=access_token, httponly=True)
+    return response
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
@@ -46,7 +150,15 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         if bal_resp:
              balance = bal_resp.get('result', {}).get('list', [{}])[0]
 
-    return templates.TemplateResponse("dashboard.html", {"request": request, "balance": balance, "settings": settings})
+    # Get Notifications
+    notifications = NotificationManager.get_unread()
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "balance": balance,
+        "settings": settings,
+        "notifications": notifications
+    })
 
 @app.get("/api/chart_data")
 async def get_chart_data(symbol: str = "BTCUSDT"):
@@ -75,6 +187,7 @@ async def save_settings(
     testnet: bool = Form(False),
     paper_trading: bool = Form(False),
     paper_balance: float = Form(10000.0),
+    is_active: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -88,13 +201,24 @@ async def save_settings(
     settings.testnet = testnet
     settings.paper_trading = paper_trading
     settings.paper_balance = paper_balance
+    settings.is_active = is_active
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
 
 @app.get("/backtest", response_class=HTMLResponse)
 async def backtest_page(request: Request):
-    return templates.TemplateResponse("backtest.html", {"request": request})
+    return templates.TemplateResponse("backtest.html", {"request": request, "config": None})
+
+@app.post("/ai_backtest_config")
+async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    key = settings.gemini_api_key if settings else None
+
+    agent = AISentimentAgent(gemini_api_key=key)
+    config = agent.interpret_strategy_prompt(prompt)
+
+    return templates.TemplateResponse("backtest.html", {"request": request, "config": config})
 
 @app.post("/run_backtest")
 async def run_backtest(

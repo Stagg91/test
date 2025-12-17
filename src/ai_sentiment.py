@@ -94,3 +94,49 @@ class AISentimentAgent:
             return "BEARISH"
         else:
             return "NEUTRAL"
+
+    def interpret_strategy_prompt(self, prompt: str):
+        """
+        Uses Gemini to translate a natural language strategy goal into backtest parameters.
+        Returns a dict of configs.
+        """
+        if not self.model:
+            # Fallback mock logic if no API key
+            return {
+                "rsi_enabled": True,
+                "rsi_lower": 30,
+                "rsi_upper": 70,
+                "macd_enabled": "scalp" in prompt.lower()
+            }
+
+        try:
+            query = f"""
+            You are a crypto trading expert. Translate the following user goal into a JSON configuration for a trading bot backtester.
+            Goal: "{prompt}"
+
+            Output strictly valid JSON with these keys (use reasonable values based on the goal):
+            - rsi_enabled (bool)
+            - rsi_lower_start (int)
+            - rsi_lower_stop (int)
+            - rsi_lower_step (int)
+            - macd_enabled (bool)
+            - symbol (e.g. BTCUSDT, ETHUSDT - infer from prompt or default BTCUSDT)
+
+            JSON:
+            """
+            response = self.model.generate_content(query)
+            # Cleanup JSON block markers if present
+            text = response.text.replace("```json", "").replace("```", "").strip()
+            import json
+            config = json.loads(text)
+            return config
+        except Exception as e:
+            print(f"AI Config Error: {e}")
+            return {
+                "rsi_enabled": True,
+                "rsi_lower_start": 20,
+                "rsi_lower_stop": 40,
+                "rsi_lower_step": 5,
+                "macd_enabled": False,
+                "symbol": "BTCUSDT"
+            }
