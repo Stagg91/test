@@ -141,6 +141,7 @@ class StartupLogger:
         try:
             with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(message)
+                f.flush() # Ensure it hits disk
         except:
             pass
 
@@ -188,14 +189,19 @@ def show_error(title, message):
 
 def start_server():
     # Force log config to avoid console issues if needed
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    try:
+        print(f"Uvicorn starting on 0.0.0.0:8000")
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    except Exception as e:
+        print(f"Uvicorn Failed: {e}")
+        # traceback.print_exc() # Writes to StartupLogger
 
 def main():
     # 1. Setup Logging & stdout redirection
     sys.stdout = StartupLogger(sys.stdout, LOG_FILE)
     sys.stderr = StartupLogger(sys.stderr, LOG_FILE)
 
-    print("Initializing JulesBot...")
+    print(f"Initializing JulesBot... Logs at {LOG_FILE}")
 
     try:
         # Start bot thread
@@ -217,7 +223,17 @@ def main():
             server_thread.start()
 
             # Wait a sec for server
+            # Check if server thread died immediately
             time.sleep(2)
+            if not server_thread.is_alive():
+                raise RuntimeError("Web Server failed to start. Check logs for details.")
+
+            print("Server is running. Preparing Window...")
+
+            # Resolve icon path
+            icon_path = get_resource_path("app_icon.png")
+            if not os.path.exists(icon_path):
+                icon_path = None
 
             # Close splash before showing window
             try:
@@ -227,18 +243,16 @@ def main():
             except ImportError:
                 pass
 
-            # Resolve icon path
-            icon_path = get_resource_path("app_icon.png")
-            if not os.path.exists(icon_path):
-                icon_path = None
-
             webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
 
             try:
-                print("Launching Window...")
-                webview.start(icon=icon_path)
+                print("Launching Webview...")
+                # debug=True allows right click inspect, helpful if it loads blank
+                webview.start(icon=icon_path, debug=True)
             except Exception as e:
-                print(f"Webview error: {e}")
+                err = f"Webview start failed: {e}\n{traceback.format_exc()}"
+                print(err)
+                show_error("GUI Error", err)
 
             print("GUI Closed. Exiting...")
         else:
