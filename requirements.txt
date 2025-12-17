@@ -21,3 +21,4 @@ qrcode
 pillow
 pywebview
 pyinstaller
+pystray
