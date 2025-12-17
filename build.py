@@ -47,6 +47,9 @@ args = [
     "--hidden-import=passlib.handlers.bcrypt",
     "--hidden-import=bcrypt",
     "--hidden-import=uvicorn.logging",
+    "--hidden-import=pystray.backends.win32",
+    "--hidden-import=pystray.backends.xorg",
+    "--hidden-import=pystray.backends.gtk",
 
     "--clean",
 ]

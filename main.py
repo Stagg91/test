@@ -198,9 +198,10 @@ def start_server():
 
 def main():
     # 1. Setup Logging & stdout redirection
+    # Redirect immediately
     sys.stdout = StartupLogger(sys.stdout, LOG_FILE)
     sys.stderr = StartupLogger(sys.stderr, LOG_FILE)
-
+    print(f"--- LOGGING STARTED at {time.ctime()} ---")
     print(f"Initializing JulesBot... Logs at {LOG_FILE}")
 
     try:
@@ -213,48 +214,84 @@ def main():
         gui_mode = "--gui" in sys.argv
 
         if gui_mode:
-            print("Starting GUI Mode...")
-            import webview
-            from src.utils import get_resource_path
+            print("Starting GUI Mode (System Browser + Tray)...")
+
+            try:
+                import pystray
+                from PIL import Image
+                from src.utils import get_resource_path
+                import webbrowser
+                print("Imports successful.")
+            except ImportError as e:
+                print(f"Import Error: {e}")
+                show_error("Startup Error", f"Missing dependency: {e}")
+                return
 
             # Start server in thread
-            print("Starting Web Server...")
+            print("Starting Web Server Thread...")
             server_thread = threading.Thread(target=start_server, daemon=True)
             server_thread.start()
 
             # Wait a sec for server
-            # Check if server thread died immediately
             time.sleep(2)
             if not server_thread.is_alive():
-                raise RuntimeError("Web Server failed to start. Check logs for details.")
+                print("Server thread died.")
+                show_error("Startup Error", "Web Server failed to start. Check logs.")
+                raise RuntimeError("Web Server failed to start.")
 
-            print("Server is running. Preparing Window...")
+            print("Server is running.")
 
-            # Resolve icon path
-            icon_path = get_resource_path("app_icon.png")
-            if not os.path.exists(icon_path):
-                icon_path = None
+            # OPEN BROWSER NOW - before any potential tray crash
+            try:
+                print("Opening System Browser...")
+                webbrowser.open("http://localhost:8000")
+            except Exception as e:
+                print(f"Failed to open browser: {e}")
 
-            # Close splash before showing window
+            # Close splash before showing tray
             try:
                 import pyi_splash
                 if pyi_splash.is_alive():
                     pyi_splash.close()
-            except ImportError:
+            except:
                 pass
 
-            webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
+            # Prepare Tray Icon
+            icon_path = get_resource_path("app_icon.png")
+            print(f"Loading icon from {icon_path}")
+            if os.path.exists(icon_path):
+                image = Image.open(icon_path)
+            else:
+                print("Icon not found, using fallback.")
+                image = Image.new('RGB', (64, 64), color = (73, 109, 137))
+
+            def on_open(icon, item):
+                webbrowser.open("http://localhost:8000")
+
+            def on_quit(icon, item):
+                icon.stop()
+                print("Quit requested.")
+                sys.exit(0)
+
+            print("Initializing Tray Icon...")
+            menu = pystray.Menu(
+                pystray.MenuItem("Open Dashboard", on_open, default=True),
+                pystray.MenuItem("Quit", on_quit)
+            )
+            icon = pystray.Icon("JulesBot", image, "JulesBot", menu)
 
             try:
-                print("Launching Webview...")
-                # debug=True allows right click inspect, helpful if it loads blank
-                webview.start(icon=icon_path, debug=True)
+                print("Running Tray Loop...")
+                icon.run()
             except Exception as e:
-                err = f"Webview start failed: {e}\n{traceback.format_exc()}"
-                print(err)
-                show_error("GUI Error", err)
+                print(f"Tray failed to load: {e}. Traceback:")
+                traceback.print_exc()
+                show_error("Tray Icon Error", f"Could not load system tray: {e}\nApp is running in background.")
+                # Fallback Loop
+                while True:
+                    time.sleep(10)
 
-            print("GUI Closed. Exiting...")
+            print("Tray Closed. Exiting...")
         else:
             # Close splash if running in console mode (unlikely with --noconsole but good practice)
             try:
