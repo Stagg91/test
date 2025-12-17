@@ -27,6 +27,22 @@
             <input type="text" name="symbol" class="form-control" value="BTCUSDT">
         </div>
 
+        <div class="mb-3">
+            <label class="form-label">Initial Balance ($)</label>
+            <input type="number" name="initial_balance" class="form-control" value="10000">
+        </div>
+
+        <div class="row mb-3">
+            <div class="col">
+                <label>Start Date (Optional)</label>
+                <input type="date" name="start_time" class="form-control">
+            </div>
+            <div class="col">
+                <label>End Date (Optional)</label>
+                <input type="date" name="end_time" class="form-control">
+            </div>
+        </div>
+
         <div class="form-check mb-3">
             <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" checked>
             <label class="form-check-label">Enable RSI Strategy</label>

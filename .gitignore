@@ -4,3 +4,5 @@ __pycache__/
 *.db
 server.log
 server.pid
+*.joblib
+*.joblib_features

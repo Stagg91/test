@@ -10,18 +10,24 @@ class DataEngine:
             api_secret=api_secret
         )
 
-    def fetch_ohlcv(self, symbol: str, interval: str = "60", limit: int = 200, category: str = "linear"):
+    def fetch_ohlcv(self, symbol: str, interval: str = "60", limit: int = 200, category: str = "linear", start_time: int = None, end_time: int = None):
         """
         Fetches OHLCV data from Bybit.
         :param interval: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, M, W
         """
         try:
-            response = self.session.get_kline(
-                category=category,
-                symbol=symbol,
-                interval=interval,
-                limit=limit
-            )
+            params = {
+                "category": category,
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit
+            }
+            if start_time:
+                params["start"] = start_time
+            if end_time:
+                params["end"] = end_time
+
+            response = self.session.get_kline(**params)
             data = response.get('result', {}).get('list', [])
 
             # Bybit returns data in reverse order (newest first).

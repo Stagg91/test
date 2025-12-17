@@ -5,8 +5,14 @@ import pandas as pd
 from src.web.app import app
 from src.database import SessionLocal, Settings
 from src.bybit_client import BybitClient
+from src.paper_trader import PaperTrader
 from src.indicators import IndicatorEngine
 from src.ai_sentiment import AISentimentAgent
+# Import ML Engine if available
+try:
+    from src.ml_engine import MLEngine
+except ImportError:
+    MLEngine = None
 
 def bot_loop():
     """
@@ -18,10 +24,18 @@ def bot_loop():
             db = SessionLocal()
             settings = db.query(Settings).first()
 
-            if settings and settings.api_key and settings.api_secret:
-                client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
+            if settings:
+                # Decide which client to use
+                if settings.paper_trading:
+                    client = PaperTrader(testnet=settings.testnet)
+                    # print("Using Paper Trader")
+                elif settings.api_key and settings.api_secret:
+                    client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
+                else:
+                    client = None
 
-                # Default Strategy: RSI + Sentiment (Example)
+                if client:
+                    # Default Strategy: RSI + Sentiment (Example)
                 # 1. Fetch Data
                 symbol = "BTCUSDT"
                 # Get last 200 candles

@@ -10,6 +10,8 @@ class Settings(Base):
     api_secret = Column(String)
     testnet = Column(Boolean, default=True)
     gemini_api_key = Column(String, nullable=True)
+    paper_trading = Column(Boolean, default=True)
+    paper_balance = Column(Float, default=10000.0)
 
 class StrategyConfig(Base):
     __tablename__ = 'strategies'

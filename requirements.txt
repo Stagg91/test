@@ -13,3 +13,5 @@ plotly
 requests
 httpx
 python-multipart
+scikit-learn
+joblib

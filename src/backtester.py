@@ -3,8 +3,9 @@ import itertools
 from src.indicators import IndicatorEngine
 
 class Backtester:
-    def __init__(self, data: pd.DataFrame):
+    def __init__(self, data: pd.DataFrame, initial_balance: float = 10000.0):
         self.data = data.copy()
+        self.initial_balance = initial_balance
 
     def run_strategy(self, strategy_func, params):
         """
@@ -17,17 +18,48 @@ class Backtester:
 
     def calculate_metrics(self, trades):
         """
-        Calculates simple PnL metrics.
+        Calculates PnL metrics and final balance.
         """
         if not trades:
-            return {"total_pnl": 0, "num_trades": 0, "win_rate": 0}
+            return {
+                "total_pnl": 0,
+                "final_balance": self.initial_balance,
+                "roi_percent": 0.0,
+                "num_trades": 0,
+                "win_rate": 0
+            }
 
-        total_pnl = sum(t['pnl'] for t in trades)
+        # Simulate Balance Change
+        balance = self.initial_balance
+        # For simplicity, let's assume each trade uses 10% of CURRENT balance or fixed amount?
+        # The user just asked for "option to allow balance to be specified".
+        # Let's assume the strategy calculates percent PnL, and we apply that to the trade size.
+        # But we didn't specify trade size in strategy.
+        # Let's assume we invest 100% of portfolio (compounding) for the sake of simple backtest metric,
+        # OR we just sum the percent returns against the initial balance if they are non-compounding.
+        # Standard simple backtest: PnL is sum of % change.
+        # Let's try to track actual equity curve if possible, assuming full capital deployment per trade for now.
+
+        current_balance = self.initial_balance
+        for trade in trades:
+            # trade['pnl'] is percentage (e.g. 5.0 for 5%)
+            # profit = current_balance * (trade['pnl'] / 100)
+            # current_balance += profit
+
+            # More safer: (Exit - Entry) / Entry * Invested_Amount
+            # Let's assume we invest 95% of current balance to allow for fees/buffer
+            invest_amount = current_balance * 0.95
+            profit = invest_amount * (trade['pnl'] / 100.0)
+            current_balance += profit
+
+        total_pnl = current_balance - self.initial_balance
         wins = len([t for t in trades if t['pnl'] > 0])
         total = len(trades)
 
         return {
             "total_pnl": total_pnl,
+            "final_balance": current_balance,
+            "roi_percent": (total_pnl / self.initial_balance) * 100,
             "num_trades": total,
             "win_rate": wins / total if total > 0 else 0
         }
