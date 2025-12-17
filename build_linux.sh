@@ -1,0 +1,9 @@
+#!/bin/bash
+echo "Installing dependencies..."
+pip install -r requirements.txt
+
+echo "Building JulesBot..."
+python3 build.py
+
+echo "Build complete!"
+echo "Run with: ./dist/JulesBot --gui"

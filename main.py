@@ -36,70 +36,80 @@ def bot_loop():
 
                 if client:
                     # Default Strategy: RSI + Sentiment (Example)
-                # 1. Fetch Data
-                symbol = "BTCUSDT"
-                # Get last 200 candles
-                candles = client.session.get_kline(category="linear", symbol=symbol, interval="60", limit=200)
-                data = candles.get('result', {}).get('list', [])
-                if data:
-                    df = pd.DataFrame(data, columns=['startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-                    # Clean data
-                    df['close'] = pd.to_numeric(df['close'])
-                    # Reverse to have oldest first for indicators
-                    df = df.iloc[::-1].reset_index(drop=True)
+                    # 1. Fetch Data
+                    symbol = "BTCUSDT"
+                    # Get last 200 candles
+                    candles = client.session.get_kline(category="linear", symbol=symbol, interval="60", limit=200)
+                    data = candles.get('result', {}).get('list', [])
+                    if data:
+                        df = pd.DataFrame(data, columns=['startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                        # Clean data
+                        df['close'] = pd.to_numeric(df['close'])
+                        # Reverse to have oldest first for indicators
+                        df = df.iloc[::-1].reset_index(drop=True)
 
-                    # 2. Add Indicators
-                    df = IndicatorEngine.add_indicators(df)
+                        # 2. Add Indicators
+                        df = IndicatorEngine.add_indicators(df)
 
-                    # 3. Analyze Sentiment
-                    sentiment_score = "NEUTRAL"
-                    if settings.gemini_api_key:
-                        ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
-                        sentiment_score = ai_agent.get_market_sentiment()
+                        # 3. Analyze Sentiment
+                        sentiment_score = "NEUTRAL"
+                        if settings.gemini_api_key:
+                            ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
+                            sentiment_score = ai_agent.get_market_sentiment()
 
-                    # 4. Check Signal (Simple RSI Strategy)
-                    last_row = df.iloc[-1]
-                    rsi = last_row.get('RSI_14')
+                        # 4. ML Prediction
+                        ml_prob = 0.5
+                        if MLEngine:
+                            try:
+                                ml_model = MLEngine()
+                                ml_prob = ml_model.predict_probability(df)
+                            except Exception as e:
+                                print(f"ML Prediction Failed: {e}")
 
-                    if rsi:
-                        print(f"[{symbol}] Price: {last_row['close']}, RSI: {rsi:.2f}, Sentiment: {sentiment_score}")
+                        # 5. Check Signal (RSI + Sentiment + ML)
+                        last_row = df.iloc[-1]
+                        rsi = last_row.get('RSI_14')
 
-                        # Logic:
-                        # Buy if RSI < 30 AND Sentiment != BEARISH
-                        # Sell if RSI > 70
+                        if rsi:
+                            print(f"[{symbol}] Price: {last_row['close']}, RSI: {rsi:.2f}, Sentiment: {sentiment_score}, ML Prob: {ml_prob:.2f}")
 
-                        # Check current position (simplified, assumes 1 position max)
-                        positions = client.session.get_positions(category="linear", symbol=symbol)
-                        pos_list = positions.get('result', {}).get('list', [])
-                        current_size = 0
-                        for p in pos_list:
-                            current_size = float(p.get('size', 0))
+                            # Logic:
+                            # Buy if RSI < 30 AND Sentiment != BEARISH AND ML Probability > 0.6
+                            # Sell if RSI > 70
 
-                        if current_size == 0:
-                            if rsi < 30 and sentiment_score != "BEARISH":
-                                print("Signal: BUY")
-                                if settings.is_active:
-                                    try:
-                                        client.open_trade(symbol, "Buy", 0.001, "Market")
-                                        from src.notifications import NotificationManager
-                                        NotificationManager.send("Trade Executed", f"Bought {symbol} at Market (RSI: {rsi:.2f})")
-                                    except Exception as e:
-                                        print(f"Trade Failed: {e}")
-                                else:
-                                    print("Trading disabled in settings.")
+                            # Check current position (simplified, assumes 1 position max)
+                            positions = client.session.get_positions(category="linear", symbol=symbol)
+                            pos_list = positions.get('result', {}).get('list', [])
+                            current_size = 0
+                            for p in pos_list:
+                                current_size = float(p.get('size', 0))
 
-                        else:
-                            if rsi > 70:
-                                print("Signal: SELL (Close)")
-                                if settings.is_active:
-                                    try:
-                                        client.close_position(symbol)
-                                        from src.notifications import NotificationManager
-                                        NotificationManager.send("Trade Closed", f"Sold {symbol} (RSI: {rsi:.2f})")
-                                    except Exception as e:
-                                        print(f"Close Failed: {e}")
-                                else:
-                                     print("Trading disabled in settings.")
+                            if current_size == 0:
+                                # Enhanced Strategy: Added ML Prob check (> 0.55 means > 55% chance of UP)
+                                if rsi < 30 and sentiment_score != "BEARISH" and ml_prob > 0.55:
+                                    print("Signal: BUY")
+                                    if settings.is_active:
+                                        try:
+                                            client.open_trade(symbol, "Buy", 0.001, "Market")
+                                            from src.notifications import NotificationManager
+                                            NotificationManager.send("Trade Executed", f"Bought {symbol} at Market (RSI: {rsi:.2f})")
+                                        except Exception as e:
+                                            print(f"Trade Failed: {e}")
+                                    else:
+                                        print("Trading disabled in settings.")
+
+                            else:
+                                if rsi > 70:
+                                    print("Signal: SELL (Close)")
+                                    if settings.is_active:
+                                        try:
+                                            client.close_position(symbol)
+                                            from src.notifications import NotificationManager
+                                            NotificationManager.send("Trade Closed", f"Sold {symbol} (RSI: {rsi:.2f})")
+                                        except Exception as e:
+                                            print(f"Close Failed: {e}")
+                                    else:
+                                         print("Trading disabled in settings.")
 
             db.close()
         except Exception as e:
@@ -107,14 +117,35 @@ def bot_loop():
 
         time.sleep(60) # Run every minute
 
+import sys
+
+def start_server():
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
+
 def main():
     # Start bot thread
     bot_thread = threading.Thread(target=bot_loop, daemon=True)
     bot_thread.start()
 
-    # Start Web Server
-    print("Starting Web UI on http://0.0.0.0:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Check if running as GUI
+    gui_mode = "--gui" in sys.argv
+
+    if gui_mode:
+        import webview
+        # Start server in thread
+        server_thread = threading.Thread(target=start_server, daemon=True)
+        server_thread.start()
+
+        # Wait a sec for server
+        time.sleep(1)
+
+        webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
+        webview.start()
+        print("GUI Closed. Exiting...")
+    else:
+        # Start Web Server blocking
+        print("Starting Web UI on http://0.0.0.0:8000")
+        start_server()
 
 if __name__ == "__main__":
     main()

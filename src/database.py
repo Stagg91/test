@@ -46,7 +46,28 @@ class TradeLog(Base):
     profit = Column(Float, nullable=True)
 
 # Database Setup
-engine = create_engine('sqlite:///trading_bot.db', connect_args={"check_same_thread": False})
+import os
+import sys
+
+def get_db_path():
+    """
+    Returns the path to the database file.
+    Uses AppData/Home directory to ensure write access in frozen mode.
+    """
+    app_name = "JulesBot"
+    if sys.platform == "win32":
+        app_data = os.getenv("APPDATA")
+        path = os.path.join(app_data, app_name)
+    else:
+        path = os.path.join(os.path.expanduser("~"), "." + app_name.lower())
+
+    os.makedirs(path, exist_ok=True)
+    return os.path.join(path, "trading_bot.db")
+
+db_url = f"sqlite:///{get_db_path()}"
+# print(f"DB URL: {db_url}")
+
+engine = create_engine(db_url, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():

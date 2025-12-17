@@ -6,3 +6,6 @@ server.log
 server.pid
 *.joblib
 *.joblib_features
+build/
+dist/
+*.spec
