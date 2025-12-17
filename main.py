@@ -1,83 +1,90 @@
-import os
-import sys
-from dotenv import load_dotenv
-
-# Ensure we can find the src module
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-
+import uvicorn
+import threading
+import time
+import pandas as pd
+from src.web.app import app
+from src.database import SessionLocal, Settings
 from src.bybit_client import BybitClient
+from src.indicators import IndicatorEngine
+from src.ai_sentiment import AISentimentAgent
+
+def bot_loop():
+    """
+    Background process that runs the trading logic.
+    """
+    print("Bot loop started...")
+    while True:
+        try:
+            db = SessionLocal()
+            settings = db.query(Settings).first()
+
+            if settings and settings.api_key and settings.api_secret:
+                client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
+
+                # Default Strategy: RSI + Sentiment (Example)
+                # 1. Fetch Data
+                symbol = "BTCUSDT"
+                # Get last 200 candles
+                candles = client.session.get_kline(category="linear", symbol=symbol, interval="60", limit=200)
+                data = candles.get('result', {}).get('list', [])
+                if data:
+                    df = pd.DataFrame(data, columns=['startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                    # Clean data
+                    df['close'] = pd.to_numeric(df['close'])
+                    # Reverse to have oldest first for indicators
+                    df = df.iloc[::-1].reset_index(drop=True)
+
+                    # 2. Add Indicators
+                    df = IndicatorEngine.add_indicators(df)
+
+                    # 3. Analyze Sentiment
+                    sentiment_score = "NEUTRAL"
+                    if settings.gemini_api_key:
+                        ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
+                        sentiment_score = ai_agent.get_market_sentiment()
+
+                    # 4. Check Signal (Simple RSI Strategy)
+                    last_row = df.iloc[-1]
+                    rsi = last_row.get('RSI_14')
+
+                    if rsi:
+                        print(f"[{symbol}] Price: {last_row['close']}, RSI: {rsi:.2f}, Sentiment: {sentiment_score}")
+
+                        # Logic:
+                        # Buy if RSI < 30 AND Sentiment != BEARISH
+                        # Sell if RSI > 70
+
+                        # Check current position (simplified, assumes 1 position max)
+                        positions = client.session.get_positions(category="linear", symbol=symbol)
+                        pos_list = positions.get('result', {}).get('list', [])
+                        current_size = 0
+                        for p in pos_list:
+                            current_size = float(p.get('size', 0))
+
+                        if current_size == 0:
+                            if rsi < 30 and sentiment_score != "BEARISH":
+                                print("Signal: BUY")
+                                # client.open_trade(symbol, "Buy", 0.001, "Market")
+                                # Commented out to prevent unintended real trades in this demo
+                        else:
+                            if rsi > 70:
+                                print("Signal: SELL (Close)")
+                                # client.close_position(symbol)
+
+            db.close()
+        except Exception as e:
+            print(f"Bot Loop Error: {e}")
+
+        time.sleep(60) # Run every minute
 
 def main():
-    load_dotenv()
+    # Start bot thread
+    bot_thread = threading.Thread(target=bot_loop, daemon=True)
+    bot_thread.start()
 
-    api_key = os.getenv("BYBIT_API_KEY")
-    api_secret = os.getenv("BYBIT_API_SECRET")
-
-    # Check if keys are present (optional, client can run without keys for public endpoints but not for trading)
-    if not api_key or not api_secret:
-        print("Warning: BYBIT_API_KEY and BYBIT_API_SECRET not found in environment. using public/testnet mode without auth if possible.")
-
-    client = BybitClient(api_key=api_key, api_secret=api_secret, testnet=True)
-
-    print("Bybit Trading Bot Initialized (Testnet)")
-
-    while True:
-        print("\nOptions:")
-        print("1. Get Balance")
-        print("2. Open Trade")
-        print("3. Modify Trade")
-        print("4. Close Trade (Cancel Order)")
-        print("5. Close Position")
-        print("6. Exit")
-
-        choice = input("Enter choice: ")
-
-        if choice == "1":
-            coin = input("Enter coin (default USDT): ") or "USDT"
-            balance = client.get_balance(coin=coin)
-            print(f"Balance: {balance}")
-
-        elif choice == "2":
-            symbol = input("Enter symbol (e.g., BTCUSDT): ")
-            side = input("Enter side (Buy/Sell): ")
-            qty = input("Enter quantity: ")
-            order_type = input("Enter order type (Market/Limit): ")
-            price = None
-            if order_type.lower() == "limit":
-                price = input("Enter price: ")
-
-            resp = client.open_trade(symbol, side, float(qty), order_type, price)
-            print(f"Order Response: {resp}")
-
-        elif choice == "3":
-            symbol = input("Enter symbol (e.g., BTCUSDT): ")
-            order_id = input("Enter Order ID: ")
-            new_qty = input("Enter new quantity (optional): ")
-            new_price = input("Enter new price (optional): ")
-
-            resp = client.modify_trade(
-                symbol,
-                order_id,
-                float(new_qty) if new_qty else None,
-                float(new_price) if new_price else None
-            )
-            print(f"Modify Response: {resp}")
-
-        elif choice == "4":
-            symbol = input("Enter symbol (e.g., BTCUSDT): ")
-            order_id = input("Enter Order ID: ")
-            resp = client.close_trade(symbol, order_id)
-            print(f"Cancel Response: {resp}")
-
-        elif choice == "5":
-            symbol = input("Enter symbol (e.g., BTCUSDT): ")
-            resp = client.close_position(symbol)
-            print(f"Close Position Response: {resp}")
-
-        elif choice == "6":
-            break
-        else:
-            print("Invalid choice")
+    # Start Web Server
+    print("Starting Web UI on http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     main()
