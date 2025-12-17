@@ -46,6 +46,7 @@ args = [
     "--hidden-import=engineio.async_drivers.threading",
     "--hidden-import=passlib.handlers.bcrypt",
     "--hidden-import=bcrypt",
+    "--hidden-import=uvicorn.logging",
 
     "--clean",
 ]

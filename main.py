@@ -118,54 +118,149 @@ def bot_loop():
         time.sleep(60) # Run every minute
 
 import sys
+import os
+import io
+import traceback
+
+# Setup Paths for Logging
+if sys.platform == "win32":
+    APP_DATA = os.path.join(os.getenv("APPDATA"), "JulesBot")
+else:
+    APP_DATA = os.path.join(os.path.expanduser("~"), ".julesbot")
+os.makedirs(APP_DATA, exist_ok=True)
+LOG_FILE = os.path.join(APP_DATA, "startup.log")
+
+class StartupLogger:
+    def __init__(self, original_stream, log_file):
+        self.original_stream = original_stream
+        self.log_file = log_file
+        self.buffer = io.StringIO()
+
+    def write(self, message):
+        # Write to file
+        try:
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(message)
+        except:
+            pass
+
+        # Update Splash if available
+        try:
+            import pyi_splash
+            if pyi_splash.is_alive():
+                # Clean message for splash (take last non-empty line)
+                lines = message.strip().split('\n')
+                if lines and lines[-1]:
+                    pyi_splash.update_text(lines[-1])
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Pass to original if it exists and is writable
+        if self.original_stream:
+            try:
+                self.original_stream.write(message)
+                self.original_stream.flush()
+            except:
+                pass
+
+    def flush(self):
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except:
+                pass
+
+    def isatty(self):
+        # Mock isatty to prevent uvicorn/click crashes in noconsole mode
+        return False
+
+def show_error(title, message):
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)
+        else:
+            print(f"ERROR: {title}\n{message}")
+    except:
+        pass
 
 def start_server():
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
+    # Force log config to avoid console issues if needed
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
 
 def main():
-    # Start bot thread
-    bot_thread = threading.Thread(target=bot_loop, daemon=True)
-    bot_thread.start()
+    # 1. Setup Logging & stdout redirection
+    sys.stdout = StartupLogger(sys.stdout, LOG_FILE)
+    sys.stderr = StartupLogger(sys.stderr, LOG_FILE)
 
-    # Check if running as GUI
-    gui_mode = "--gui" in sys.argv
+    print("Initializing JulesBot...")
 
-    if gui_mode:
-        import webview
-        from src.utils import get_resource_path
-        import os
+    try:
+        # Start bot thread
+        print("Starting Bot Loop...")
+        bot_thread = threading.Thread(target=bot_loop, daemon=True)
+        bot_thread.start()
 
-        # Start server in thread
-        server_thread = threading.Thread(target=start_server, daemon=True)
-        server_thread.start()
+        # Check if running as GUI
+        gui_mode = "--gui" in sys.argv
 
-        # Wait a sec for server
-        time.sleep(1)
+        if gui_mode:
+            print("Starting GUI Mode...")
+            import webview
+            from src.utils import get_resource_path
 
-        # Resolve icon path (app_icon.png works best for window icon usually)
-        # Note: PyInstaller creates app_icon.png in root of _MEIPASS if added via --add-data or implicitly if it's main icon?
-        # Actually build.py didn't add the icon as data yet. We should add it.
-        # But wait, we have get_resource_path to find it if we ship it.
+            # Start server in thread
+            print("Starting Web Server...")
+            server_thread = threading.Thread(target=start_server, daemon=True)
+            server_thread.start()
 
-        # For now, let's assume we ship app_icon.png
-        icon_path = get_resource_path("app_icon.png")
-        if not os.path.exists(icon_path):
-            icon_path = None # Fallback
+            # Wait a sec for server
+            time.sleep(2)
 
-        webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
+            # Close splash before showing window
+            try:
+                import pyi_splash
+                if pyi_splash.is_alive():
+                    pyi_splash.close()
+            except ImportError:
+                pass
 
-        # Tray is enabled via start param in recent versions
-        # Need to handle case where tray might not be supported on Linux without deps
-        try:
-            webview.start(icon=icon_path) # tray=True removed to ensure stability if libappindicator missing
-        except Exception as e:
-            print(f"Webview error: {e}")
+            # Resolve icon path
+            icon_path = get_resource_path("app_icon.png")
+            if not os.path.exists(icon_path):
+                icon_path = None
 
-        print("GUI Closed. Exiting...")
-    else:
-        # Start Web Server blocking
-        print("Starting Web UI on http://0.0.0.0:8000")
-        start_server()
+            webview.create_window("JulesBot", "http://localhost:8000", width=1200, height=800)
+
+            try:
+                print("Launching Window...")
+                webview.start(icon=icon_path)
+            except Exception as e:
+                print(f"Webview error: {e}")
+
+            print("GUI Closed. Exiting...")
+        else:
+            # Close splash if running in console mode (unlikely with --noconsole but good practice)
+            try:
+                import pyi_splash
+                if pyi_splash.is_alive():
+                    pyi_splash.close()
+            except ImportError:
+                pass
+
+            # Start Web Server blocking
+            print("Starting Web UI on http://0.0.0.0:8000")
+            start_server()
+
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        # Log it
+        print(f"CRITICAL ERROR: {err_msg}")
+        # Show Popup
+        show_error("JulesBot Startup Error", f"An error occurred during startup:\n\n{e}\n\nSee {LOG_FILE} for details.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
