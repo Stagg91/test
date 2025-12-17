@@ -40,6 +40,8 @@ args = [
     "--hidden-import=sklearn.tree._utils",
     "--hidden-import=scipy.special.cython_special",
     "--hidden-import=engineio.async_drivers.threading",
+    "--hidden-import=passlib.handlers.bcrypt",
+    "--hidden-import=bcrypt",
 
     "--clean",
 ]
