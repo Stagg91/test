@@ -15,7 +15,8 @@ httpx
 python-multipart
 scikit-learn
 joblib
-passlib[bcrypt]
+passlib
+bcrypt==3.2.2
 pyjwt
 qrcode
 pillow
