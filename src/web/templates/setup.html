@@ -1,30 +1,37 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Setup - Staggs Hectic Trader</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body class="bg-light">
-<div class="container d-flex justify-content-center align-items-center" style="height:100vh;">
-    <div class="card p-4 shadow" style="width:100%; max-width:400px;">
-        <h3 class="text-center mb-4">Staggs Hectic Trader Setup</h3>
-        <p class="text-muted text-center">Create your admin account.</p>
-        {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-        {% endif %}
-        <form method="post">
-            <div class="mb-3">
-                <label class="form-label">Username</label>
-                <input type="text" name="username" class="form-control" value="admin" required>
+{% extends "layout.html" %}
+
+{% block title %}Setup - Staggs Hectic Trader{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 80vh;">
+    <div class="col-md-5 col-sm-10">
+        <div class="card shadow-lg border-gold">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <i class="fa-solid fa-rocket fa-3x text-gold mb-3"></i>
+                    <h3 class="card-title text-gold">Initial Setup</h3>
+                    <p class="text-muted">Create your admin account to secure the bot.</p>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+
+                <form method="post">
+                    <div class="form-floating mb-3">
+                        <input type="text" name="username" class="form-control" id="username" value="admin" placeholder="Username" required>
+                        <label for="username">Username</label>
+                    </div>
+                    <div class="form-floating mb-4">
+                        <input type="password" name="password" class="form-control" id="password" placeholder="Password" required>
+                        <label for="password">Password</label>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">Create Account</button>
+                    </div>
+                </form>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Password</label>
-                <input type="password" name="password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-success w-100">Create Account</button>
-        </form>
+        </div>
     </div>
 </div>
-</body>
-</html>
+{% endblock %}

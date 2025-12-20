@@ -1,69 +1,78 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Settings - Staggs Hectic Trader</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">Staggs Hectic Trader</a>
-    <div class="collapse navbar-collapse">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/backtest">Backtest</a></li>
-        <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
-      </ul>
+{% extends "layout.html" %}
+
+{% block title %}Settings - Staggs Hectic Trader{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <h1 class="text-gold">Settings</h1>
     </div>
-  </div>
-</nav>
-
-<div class="container mt-4">
-    <h1>Settings</h1>
-
-    {% if message %}
-    <div class="alert alert-success">{{ message }}</div>
-    {% endif %}
-
-    <form method="post">
-        <div class="mb-3">
-            <label class="form-label">Bybit API Key</label>
-            <input type="text" name="api_key" class="form-control" value="{{ settings.api_key if settings else '' }}">
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Bybit API Secret</label>
-            <input type="password" name="api_secret" class="form-control" value="{{ settings.api_secret if settings else '' }}">
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Gemini API Key (AI)</label>
-            <input type="text" name="gemini_key" class="form-control" value="{{ settings.gemini_api_key if settings else '' }}">
-        </div>
-        <div class="mb-3 form-check">
-            <input type="checkbox" class="form-check-input" name="testnet" value="true" {% if settings and settings.testnet %}checked{% endif %}>
-            <label class="form-check-label">Use Testnet (for Bybit API)</label>
-        </div>
-
-        <hr>
-        <h4>Trading Status</h4>
-        <div class="mb-3 form-check">
-            <input type="checkbox" class="form-check-input" name="is_active" value="true" {% if settings and settings.is_active %}checked{% endif %}>
-            <label class="form-check-label text-danger fw-bold">Enable Live Trading (Bot Active)</label>
-            <div class="form-text">If unchecked, the bot will monitor but NOT execute trades.</div>
-        </div>
-
-        <hr>
-        <h4>Paper Trading</h4>
-        <div class="mb-3 form-check">
-            <input type="checkbox" class="form-check-input" name="paper_trading" value="true" {% if settings and settings.paper_trading %}checked{% endif %}>
-            <label class="form-check-label">Enable Paper Trading (Internal Simulation)</label>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Paper Trading Balance</label>
-            <input type="number" step="0.01" name="paper_balance" class="form-control" value="{{ settings.paper_balance if settings else '10000.0' }}">
-        </div>
-
-        <button type="submit" class="btn btn-primary">Save Settings</button>
-    </form>
 </div>
-</body>
-</html>
+
+<div class="row justify-content-center">
+    <div class="col-md-8 col-sm-12">
+        <div class="card shadow">
+            <div class="card-header"><i class="fa-solid fa-cogs"></i> Configuration</div>
+            <div class="card-body">
+                {% if message %}
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <form method="post">
+                    <h5 class="text-gold mb-3">Bybit API</h5>
+                    <div class="form-floating mb-3">
+                        <input type="text" name="api_key" class="form-control" id="apiKey" value="{{ settings.api_key if settings else '' }}" placeholder="API Key">
+                        <label for="apiKey">API Key</label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <input type="password" name="api_secret" class="form-control" id="apiSecret" value="{{ settings.api_secret if settings else '' }}" placeholder="API Secret">
+                        <label for="apiSecret">API Secret</label>
+                    </div>
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" name="testnet" id="testnet" value="true" {% if settings and settings.testnet %}checked{% endif %}>
+                        <label class="form-check-label" for="testnet">Use Testnet (Recommended for dev)</label>
+                    </div>
+
+                    <h5 class="text-gold mb-3">AI Integration</h5>
+                    <div class="form-floating mb-3">
+                        <input type="text" name="gemini_key" class="form-control" id="geminiKey" value="{{ settings.gemini_api_key if settings else '' }}" placeholder="Gemini API Key">
+                        <label for="geminiKey">Google Gemini API Key</label>
+                    </div>
+
+                    <hr class="border-secondary my-4">
+
+                    <h5 class="text-gold mb-3">Execution Mode</h5>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input bg-danger border-danger" type="checkbox" name="is_active" id="isActive" value="true" {% if settings and settings.is_active %}checked{% endif %}>
+                        <label class="form-check-label text-danger fw-bold" for="isActive">Enable Live Trading</label>
+                        <div class="form-text">When enabled, the bot WILL execute trades with real/paper money.</div>
+                    </div>
+
+                    <div class="card bg-dark border-secondary mb-3">
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="paper_trading" id="paperTrading" value="true" {% if settings and settings.paper_trading %}checked{% endif %}>
+                                <label class="form-check-label text-info fw-bold" for="paperTrading">Paper Trading Mode</label>
+                            </div>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary text-muted">$</span>
+                                <div class="form-floating flex-grow-1">
+                                    <input type="number" step="0.01" name="paper_balance" class="form-control border-secondary" id="paperBalance" value="{{ settings.paper_balance if settings else '10000.0' }}" placeholder="Balance">
+                                    <label for="paperBalance">Simulated Balance</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg"><i class="fa-solid fa-save"></i> Save Settings</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

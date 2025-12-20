@@ -1,91 +1,171 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Backtest - Staggs Hectic Trader</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">Staggs Hectic Trader</a>
-    <div class="collapse navbar-collapse">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/backtest">Backtest</a></li>
-        <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
-      </ul>
+{% extends "layout.html" %}
+
+{% block title %}Backtest - Staggs Hectic Trader{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <h1 class="text-gold">Backtest Strategy</h1>
     </div>
-  </div>
-</nav>
-
-<div class="container mt-4">
-    <h1>Backtest Strategy</h1>
-
-    <div class="card mb-4 bg-light">
-        <div class="card-body">
-            <h5>AI Strategy Designer</h5>
-            <p>Describe your goal (e.g., "Find the best scalping strategy for ETH") and let AI configure the backtest.</p>
-            <form action="/ai_backtest_config" method="post">
-                <div class="input-group">
-                    <input type="text" name="prompt" class="form-control" placeholder="Describe strategy...">
-                    <button class="btn btn-success" type="submit">Auto-Configure</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <form action="/run_backtest" method="post" target="results_frame">
-        <div class="mb-3">
-            <label class="form-label">Symbol</label>
-            <input type="text" name="symbol" class="form-control" value="{{ config.symbol if config else 'BTCUSDT' }}">
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label">Initial Balance ($)</label>
-            <input type="number" name="initial_balance" class="form-control" value="10000">
-        </div>
-
-        <div class="row mb-3">
-            <div class="col">
-                <label>Start Date (Optional)</label>
-                <input type="date" name="start_time" class="form-control">
-            </div>
-            <div class="col">
-                <label>End Date (Optional)</label>
-                <input type="date" name="end_time" class="form-control">
-            </div>
-        </div>
-
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" {% if not config or config.rsi_enabled %}checked{% endif %}>
-            <label class="form-check-label">Enable RSI Strategy</label>
-        </div>
-
-        <h4>RSI Parameters (Grid Search)</h4>
-        <div class="row mb-3">
-            <div class="col">
-                <label>Lower Bound Start</label>
-                <input type="number" name="rsi_lower_start" class="form-control" value="{{ config.rsi_lower_start if config else 20 }}">
-            </div>
-            <div class="col">
-                <label>Lower Bound Stop</label>
-                <input type="number" name="rsi_lower_stop" class="form-control" value="{{ config.rsi_lower_stop if config else 40 }}">
-            </div>
-            <div class="col">
-                <label>Lower Bound Step</label>
-                <input type="number" name="rsi_lower_step" class="form-control" value="{{ config.rsi_lower_step if config else 5 }}">
-            </div>
-        </div>
-
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="macd_enabled" value="true" {% if config and config.macd_enabled %}checked{% endif %}>
-            <label class="form-check-label">Enable MACD (Signal Crossover)</label>
-        </div>
-
-        <button type="submit" class="btn btn-primary mt-3">Run Backtest</button>
-    </form>
-
-    <iframe name="results_frame" style="width:100%; height:400px; border:1px solid #ccc; margin-top:20px;"></iframe>
 </div>
-</body>
-</html>
+
+<!-- AI Config -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-dark border-gold">
+            <div class="card-body">
+                <h5 class="card-title text-gold"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Strategy Designer</h5>
+                <p class="text-muted">Describe your goal (e.g., "Find the best scalping strategy for ETH") and let AI configure the backtest.</p>
+                <form action="/ai_backtest_config" method="post" class="d-flex gap-2">
+                    <input type="text" name="prompt" class="form-control" placeholder="Describe strategy...">
+                    <button class="btn btn-primary" type="submit">Auto-Configure</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Config & Run -->
+<div class="row g-4">
+    <div class="col-md-4 col-sm-12">
+        <div class="card h-100">
+            <div class="card-header"><i class="fa-solid fa-sliders"></i> Configuration</div>
+            <div class="card-body">
+                <form id="backtestForm">
+                    <div class="mb-3">
+                        <label class="form-label">Symbol</label>
+                        <input type="text" name="symbol" class="form-control" value="{{ config.symbol if config else 'BTCUSDT' }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Initial Balance ($)</label>
+                        <input type="number" name="initial_balance" class="form-control" value="10000">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Start Date</label>
+                            <input type="date" name="start_time" class="form-control">
+                        </div>
+                        <div class="col">
+                            <label class="form-label">End Date</label>
+                            <input type="date" name="end_time" class="form-control">
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-gold">RSI Strategy</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" {% if not config or config.rsi_enabled %}checked{% endif %}>
+                        <label class="form-check-label">Enable RSI</label>
+                    </div>
+                    <div class="input-group mb-2">
+                        <span class="input-group-text bg-dark text-muted border-secondary">Lower Start</span>
+                        <input type="number" name="rsi_lower_start" class="form-control" value="{{ config.rsi_lower_start if config else 20 }}">
+                    </div>
+                    <div class="input-group mb-2">
+                        <span class="input-group-text bg-dark text-muted border-secondary">Lower Stop</span>
+                        <input type="number" name="rsi_lower_stop" class="form-control" value="{{ config.rsi_lower_stop if config else 40 }}">
+                    </div>
+                    <div class="input-group mb-3">
+                        <span class="input-group-text bg-dark text-muted border-secondary">Step</span>
+                        <input type="number" name="rsi_lower_step" class="form-control" value="{{ config.rsi_lower_step if config else 5 }}">
+                    </div>
+
+                    <h6 class="text-gold">MACD Strategy</h6>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="macd_enabled" value="true" {% if config and config.macd_enabled %}checked{% endif %}>
+                        <label class="form-check-label">Enable MACD</label>
+                    </div>
+
+                    <button type="button" onclick="runBacktest()" class="btn btn-primary w-100">
+                        <i class="fa-solid fa-play"></i> Run Backtest
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8 col-sm-12">
+        <div class="card h-100">
+            <div class="card-header"><i class="fa-solid fa-list-ol"></i> Results</div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <table class="table table-hover table-striped mb-0" id="resultsTable">
+                        <thead class="sticky-top bg-dark">
+                            <tr>
+                                <th>Params</th>
+                                <th>PnL ($)</th>
+                                <th>ROI (%)</th>
+                                <th>Trades</th>
+                                <th>Win Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                            <tr><td colspan="5" class="text-center text-muted p-4">Run a backtest to see results.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runBacktest() {
+    const form = document.getElementById('backtestForm');
+    const formData = new FormData(form);
+    const tbody = document.getElementById('resultsBody');
+
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4"><div class="spinner-border text-gold" role="status"></div><br>Running Grid Search...</td></tr>';
+
+    try {
+        const response = await fetch('/run_backtest', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error("Backtest failed");
+
+        const results = await response.json();
+
+        if (results.error) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">${results.error}</td></tr>`;
+            return;
+        }
+
+        if (results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4">No results found or data insufficient.</td></tr>';
+            return;
+        }
+
+        let html = '';
+        results.forEach(res => {
+            const m = res.metrics;
+            const p = res.params;
+            // Format params nicely
+            let paramStr = '';
+            if(p.rsi_enabled) paramStr += `RSI<${p.rsi_lower} `;
+            if(p.macd_enabled) paramStr += `MACD `;
+
+            html += `
+            <tr>
+                <td><small>${paramStr}</small></td>
+                <td class="${m.total_pnl >= 0 ? 'text-success' : 'text-danger'} fw-bold">${m.total_pnl.toFixed(2)}</td>
+                <td class="${m.roi_percent >= 0 ? 'text-success' : 'text-danger'}">${m.roi_percent.toFixed(2)}%</td>
+                <td>${m.num_trades}</td>
+                <td>${(m.win_rate * 100).toFixed(1)}%</td>
+            </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">Error: ${e.message}</td></tr>`;
+    }
+}
+</script>
+{% endblock %}

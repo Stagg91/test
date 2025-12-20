@@ -1,77 +1,65 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Synopsis - Staggs Hectic Trader</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .gauge-container { width: 300px; height: 150px; margin: 0 auto; overflow: hidden; position: relative; }
-        .gauge-bg { width: 300px; height: 150px; border-radius: 150px 150px 0 0; background: #eee; }
-        .gauge-fill { width: 300px; height: 150px; border-radius: 150px 150px 0 0; background: green; transform-origin: bottom center; transform: rotate(-180deg); transition: transform 1s; position: absolute; top:0; left:0; }
-        .gauge-value { position: absolute; bottom: 0; width: 100%; text-align: center; font-size: 24px; font-weight: bold; }
-    </style>
-</head>
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">Staggs Hectic Trader</a>
-    <div class="collapse navbar-collapse">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/backtest">Backtest</a></li>
-        <li class="nav-item"><a class="nav-link active" href="/synopsis">Synopsis</a></li>
-        <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
-      </ul>
+{% extends "layout.html" %}
+
+{% block title %}Synopsis - Staggs Hectic Trader{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <h1 class="text-gold">Strategy Synopsis</h1>
     </div>
-  </div>
-</nav>
+</div>
 
-<div class="container mt-4">
-    <h1>Strategy Synopsis & Analysis</h1>
+<div class="row g-4">
+    <!-- Market Analysis -->
+    <div class="col-md-6 col-sm-12">
+        <div class="card h-100">
+            <div class="card-header"><i class="fa-solid fa-microscope"></i> Market Analysis (BTCUSDT)</div>
+            <div class="card-body">
+                <h5 class="text-gold">Technical Indicators</h5>
+                <ul class="list-group list-group-flush mb-3">
+                {% for key, val in indicators.items() %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent text-white border-bottom border-secondary">
+                        <strong>{{ key }}</strong>
+                        <span>{{ val }}</span>
+                    </li>
+                {% endfor %}
+                </ul>
 
-    <div class="row mt-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">Market Analysis (BTCUSDT)</div>
-                <div class="card-body">
-                    <h5>Technical Indicators</h5>
-                    <ul>
-                    {% for key, val in indicators.items() %}
-                        <li><strong>{{ key }}:</strong> {{ val }}</li>
-                    {% endfor %}
-                    </ul>
-
-                    <hr>
-                    <h5>Sentiment Score</h5>
-                    <p class="display-6">{{ sentiment }}</p>
-
-                    <hr>
-                    <h5>ML Probability (Upside)</h5>
-                    <div class="gauge-container">
-                        <div class="gauge-bg"></div>
-                        <div class="gauge-fill" style="transform: rotate({{ (ml_prob * 180) - 180 }}deg); background: {{ 'green' if ml_prob > 0.5 else 'red' }};"></div>
-                        <div class="gauge-value">{{ (ml_prob * 100)|round(1) }}%</div>
-                    </div>
+                <h5 class="text-gold">Sentiment Score</h5>
+                <div class="d-flex align-items-center mb-3">
+                    <h2 class="me-3 mb-0">{{ sentiment }}</h2>
+                    {% if sentiment == 'BULLISH' %}
+                        <i class="fa-solid fa-arrow-trend-up fa-2x text-success"></i>
+                    {% elif sentiment == 'BEARISH' %}
+                        <i class="fa-solid fa-arrow-trend-down fa-2x text-danger"></i>
+                    {% else %}
+                        <i class="fa-solid fa-minus fa-2x text-muted"></i>
+                    {% endif %}
                 </div>
-            </div>
-        </div>
 
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-header">Strategy Explanation (AI Generated)</div>
-                <div class="card-body">
-                    <p class="card-text" style="white-space: pre-wrap;">{{ explanation }}</p>
+                <h5 class="text-gold">ML Probability (Upside)</h5>
+                <div style="width: 100%; height: 30px; background: #333; border-radius: 15px; overflow: hidden; position: relative;">
+                    <div style="width: {{ ml_prob * 100 }}%; height: 100%; background: {{ 'var(--accent-success)' if ml_prob > 0.5 else 'var(--accent-danger)' }}; transition: width 1s;"></div>
+                    <span style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: white; line-height: 30px; font-weight: bold;">{{ (ml_prob * 100)|round(1) }}%</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row mt-4">
-        <div class="col-12 text-center">
-            <form action="/train_ml" method="post">
-                <button type="submit" class="btn btn-warning">Retrain ML Model on Latest Data</button>
-            </form>
+    <!-- AI Explanation -->
+    <div class="col-md-6 col-sm-12">
+        <div class="card h-100">
+            <div class="card-header"><i class="fa-solid fa-robot"></i> Strategy Explanation</div>
+            <div class="card-body">
+                <p class="card-text lead" style="white-space: pre-wrap;">{{ explanation }}</p>
+                <div class="mt-4 text-center">
+                    <form action="/train_ml" method="post">
+                        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> Retrain ML Model</button>
+                    </form>
+                    <small class="text-muted d-block mt-2">Retrains using latest 1000 candles</small>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-</body>
-</html>
+{% endblock %}

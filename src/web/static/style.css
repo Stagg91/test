@@ -1,0 +1,119 @@
+:root {
+    --bg-dark: #121212;
+    --bg-card: #1e1e1e;
+    --text-primary: #e0e0e0;
+    --text-muted: #a0a0a0;
+    --accent-gold: #FFD700;
+    --accent-blue: #007bff;
+    --accent-success: #28a745;
+    --accent-danger: #dc3545;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    padding-bottom: 60px; /* Space for footer/mobile nav if needed */
+}
+
+/* Navbar */
+.navbar {
+    background-color: var(--bg-card) !important;
+    border-bottom: 2px solid var(--accent-gold);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    color: var(--accent-gold) !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.nav-link {
+    color: var(--text-primary) !important;
+}
+
+.nav-link:hover, .nav-link.active {
+    color: var(--accent-gold) !important;
+}
+
+/* Cards */
+.card {
+    background-color: var(--bg-card);
+    border: 1px solid #333;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.card-header {
+    background-color: transparent;
+    border-bottom: 1px solid #333;
+    font-weight: 600;
+    color: var(--accent-gold);
+}
+
+.card-body {
+    color: var(--text-primary);
+}
+
+/* Forms */
+.form-control, .form-select {
+    background-color: #2c2c2c;
+    border: 1px solid #444;
+    color: var(--text-primary);
+}
+
+.form-control:focus {
+    background-color: #2c2c2c;
+    border-color: var(--accent-gold);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 0.25rem rgba(255, 215, 0, 0.25);
+}
+
+.form-check-input:checked {
+    background-color: var(--accent-gold);
+    border-color: var(--accent-gold);
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--accent-gold);
+    border-color: var(--accent-gold);
+    color: #000;
+    font-weight: bold;
+}
+
+.btn-primary:hover {
+    background-color: #e6c200;
+    border-color: #e6c200;
+    color: #000;
+}
+
+/* Tables */
+.table {
+    color: var(--text-primary);
+}
+.table-hover tbody tr:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 215, 0, 0.1);
+}
+
+/* Utils */
+.text-gold { color: var(--accent-gold) !important; }
+.bg-light { background-color: var(--bg-card) !important; } /* Override bootstrap light util */
+
+/* Mobile Adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    .card-header {
+        font-size: 1.1rem;
+    }
+    h1 {
+        font-size: 1.8rem;
+        margin-top: 10px;
+    }
+}
