@@ -123,12 +123,14 @@ import io
 import traceback
 
 # Setup Paths for Logging
-if sys.platform == "win32":
-    APP_DATA = os.path.join(os.getenv("APPDATA"), "StaggsHecticTrader")
+if getattr(sys, 'frozen', False):
+    # If run as exe, use directory of exe
+    BASE_DIR = os.path.dirname(sys.executable)
 else:
-    APP_DATA = os.path.join(os.path.expanduser("~"), ".staggshectictrader")
-os.makedirs(APP_DATA, exist_ok=True)
-LOG_FILE = os.path.join(APP_DATA, "startup.log")
+    # If run as script, use script directory
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+LOG_FILE = os.path.join(BASE_DIR, "staggs_trader.log")
 
 class StartupLogger:
     def __init__(self, original_stream, log_file):

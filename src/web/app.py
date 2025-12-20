@@ -97,16 +97,25 @@ async def logout():
 async def setup_page(request: Request):
     return templates.TemplateResponse("setup.html", {"request": request})
 
+import traceback
+import logging
+
 @app.post("/setup")
 async def setup(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    if db.query(User).count() > 0:
-        return RedirectResponse(url="/login", status_code=303)
+    try:
+        if db.query(User).count() > 0:
+            return RedirectResponse(url="/login", status_code=303)
 
-    hashed_pw = get_password_hash(password)
-    new_user = User(username=username, hashed_password=hashed_pw)
-    db.add(new_user)
-    db.commit()
-    return RedirectResponse(url="/login", status_code=303)
+        hashed_pw = get_password_hash(password)
+        new_user = User(username=username, hashed_password=hashed_pw)
+        db.add(new_user)
+        db.commit()
+        return RedirectResponse(url="/login", status_code=303)
+    except Exception as e:
+        err_msg = f"Setup Error: {e}\n{traceback.format_exc()}"
+        print(err_msg) # Captured by StartupLogger
+        logging.error(err_msg)
+        return templates.TemplateResponse("setup.html", {"request": request, "error": f"Internal Error: {e}. Check staggs_trader.log"})
 
 
 @app.get("/connect_mobile", response_class=HTMLResponse)
