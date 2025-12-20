@@ -189,14 +189,42 @@ def show_error(title, message):
     except:
         pass
 
-def start_server():
-    # Force log config to avoid console issues if needed
-    try:
-        print(f"Uvicorn starting on 0.0.0.0:8000")
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
-    except Exception as e:
-        print(f"Uvicorn Failed: {e}")
-        # traceback.print_exc() # Writes to StartupLogger
+def start_server(start_port=8000):
+    # Try ports 8000-8010
+    port = start_port
+    while port < start_port + 10:
+        try:
+            print(f"Attempting Uvicorn on 0.0.0.0:{port}")
+            # uvicorn.run blocks, so we can't easily try/catch bind error without a custom config
+            # But uvicorn doesn't raise exception easily on run(), it just logs error and exits.
+            # We will rely on main thread checking thread aliveness, but that doesn't help port selection.
+            # To properly select port, we should check availability first or assume 8000.
+            # For simplicity, let's stick to 8000 but log clearly if it fails.
+            # Actually, user requested port fallback.
+
+            # Simple check
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(('0.0.0.0', port)) == 0:
+                    # Port is open (in use)
+                    print(f"Port {port} in use, trying next...")
+                    port += 1
+                    continue
+
+            # Write port to a file so other parts (browser) know?
+            # Or just update the global URL variable
+            global SERVER_PORT
+            SERVER_PORT = port
+
+            uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+            return
+        except Exception as e:
+            print(f"Uvicorn Error on {port}: {e}")
+            port += 1
+
+    print("Could not find open port for Uvicorn.")
+
+SERVER_PORT = 8000
 
 def main():
     # 1. Setup Logging & stdout redirection
@@ -245,8 +273,8 @@ def main():
 
             # OPEN BROWSER NOW - before any potential tray crash
             try:
-                print("Opening System Browser...")
-                webbrowser.open("http://localhost:8000")
+                print(f"Opening System Browser on http://localhost:{SERVER_PORT}...")
+                webbrowser.open(f"http://localhost:{SERVER_PORT}")
             except Exception as e:
                 print(f"Failed to open browser: {e}")
 
@@ -268,7 +296,7 @@ def main():
                 image = Image.new('RGB', (64, 64), color = (73, 109, 137))
 
             def on_open(icon, item):
-                webbrowser.open("http://localhost:8000")
+                webbrowser.open(f"http://localhost:{SERVER_PORT}")
 
             def on_check_logs(icon, item):
                 try:

@@ -173,6 +173,51 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "notifications": notifications
     })
 
+@app.get("/api/symbols")
+async def get_symbols(db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    key = settings.api_key if settings else None
+    secret = settings.api_secret if settings else None
+    testnet = settings.testnet if settings else True
+
+    client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
+    resp = client.get_instruments()
+
+    if resp and 'result' in resp and 'list' in resp['result']:
+        # Extract symbol names
+        symbols = [item['symbol'] for item in resp['result']['list'] if item['status'] == 'Trading']
+        symbols.sort()
+        return symbols
+    return ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+
+@app.get("/api/market_watch")
+async def get_market_watch(db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    key = settings.api_key if settings else None
+    secret = settings.api_secret if settings else None
+    testnet = settings.testnet if settings else True
+
+    client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
+    resp = client.get_tickers()
+
+    data = []
+    if resp and 'result' in resp and 'list' in resp['result']:
+        for item in resp['result']['list']:
+            # Basic fields: symbol, lastPrice, price24hPcnt
+            try:
+                change = float(item.get('price24hPcnt', 0)) * 100
+                data.append({
+                    'symbol': item['symbol'],
+                    'price': item['lastPrice'],
+                    'change': f"{change:.2f}"
+                })
+            except:
+                continue
+
+    # Sort by volume or symbol? Let's sort by symbol for now, or maybe most volatile?
+    # Let's return all, frontend handles display limit
+    return data
+
 @app.get("/api/chart_data")
 async def get_chart_data(symbol: str = "BTCUSDT"):
     de = DataEngine()
@@ -181,6 +226,9 @@ async def get_chart_data(symbol: str = "BTCUSDT"):
         return {"error": "No data"}
 
     df = IndicatorEngine.add_indicators(df)
+
+    # Handle NaN for JSON compatibility
+    df = df.where(pd.notnull(df), None)
 
     # Convert to JSON friendly format
     records = df.to_dict(orient="records")
@@ -239,6 +287,7 @@ async def run_backtest(
     initial_balance: float = Form(10000.0),
     start_time: str = Form(None), # Optional YYYY-MM-DD
     end_time: str = Form(None),
+    interval: str = Form("60"),
     rsi_enabled: bool = Form(False),
     rsi_lower_start: int = Form(20),
     rsi_lower_stop: int = Form(40),
@@ -254,7 +303,7 @@ async def run_backtest(
     if end_time:
         ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
 
-    df = de.fetch_ohlcv(symbol, interval="60", limit=1000 if (start_time or end_time) else 200, start_time=ts_start, end_time=ts_end)
+    df = de.fetch_ohlcv(symbol, interval=interval, limit=1000 if (start_time or end_time) else 200, start_time=ts_start, end_time=ts_end)
 
     if df.empty:
         return {"error": "No data found"}

@@ -115,3 +115,27 @@ class BybitClient:
         except Exception as e:
             print(f"Error closing position: {e}")
             return None
+
+    def get_instruments(self, category: str = "linear"):
+        """
+        Fetches all trading pairs.
+        """
+        try:
+            # Iteration needed if pagination? usually instruments info is large
+            # V5 Get Instruments Info
+            response = self.session.get_instruments_info(category=category, limit=1000)
+            return response
+        except Exception as e:
+            print(f"Error fetching instruments: {e}")
+            return None
+
+    def get_tickers(self, category: str = "linear"):
+        """
+        Fetches real-time ticker data for all symbols.
+        """
+        try:
+            response = self.session.get_tickers(category=category)
+            return response
+        except Exception as e:
+            print(f"Error fetching tickers: {e}")
+            return None
