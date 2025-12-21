@@ -13,6 +13,8 @@ class Settings(Base):
     paper_trading = Column(Boolean, default=True)
     paper_balance = Column(Float, default=10000.0)
     is_active = Column(Boolean, default=False)
+    auto_evolve = Column(Boolean, default=False)
+    last_evolution_time = Column(Float, default=0.0)
 
 class User(Base):
     __tablename__ = 'users'
@@ -102,5 +104,18 @@ def init_db():
             with engine.connect() as conn:
                 conn.execute(text("DROP TABLE strategies"))
                 conn.commit()
+
+    # Check settings schema
+    if inspector.has_table("settings"):
+        columns = [c['name'] for c in inspector.get_columns("settings")]
+        if "auto_evolve" not in columns:
+             print("Migrating settings table...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN auto_evolve BOOLEAN DEFAULT 0"))
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN last_evolution_time FLOAT DEFAULT 0.0"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"Migration Error: {e}")
 
     Base.metadata.create_all(bind=engine)

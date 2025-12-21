@@ -15,6 +15,83 @@ import os
 # Global Risk Manager
 risk_manager = RiskManager()
 
+def evolution_loop():
+    """
+    Background process for continuous evolution.
+    """
+    print("Evolution loop started...")
+    from src.genetic_engine import GeneticBreeder
+    from src.bybit_client import BybitClient
+
+    while True:
+        try:
+            db = SessionLocal()
+            settings = db.query(Settings).first()
+
+            if settings and settings.auto_evolve:
+                now = time.time()
+                last_run = settings.last_evolution_time or 0.0
+                # Run every 4 hours = 14400 seconds
+                if now - last_run > 14400:
+                    print("Auto-Evolution Triggered.")
+                    # Update last run immediately
+                    settings.last_evolution_time = now
+                    db.commit()
+
+                    breeder = GeneticBreeder(gemini_api_key=settings.gemini_api_key)
+
+                    # Fetch top symbols dynamically
+                    # We need a client to fetch symbols. Use generic public client if possible or just instance
+                    # We can use BybitClient without keys for public data usually, or use settings keys
+                    client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
+                    resp = client.get_instruments()
+                    symbols = []
+                    if resp and 'result' in resp and 'list' in resp['result']:
+                         # Filter top 10 USDT pairs by some criteria?
+                         # For now, let's just pick a diverse set or random set to avoid hitting limits
+                         # Or just top volume ones if we had volume data.
+                         # We'll take top 10 from the list which is usually sorted by symbol.
+                         # Better: Fetch tickers and sort by volume.
+                        tickers = client.get_tickers()
+                        if tickers and 'result' in tickers:
+                            sorted_tickers = sorted(tickers['result']['list'], key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+                            symbols = [t['symbol'] for t in sorted_tickers if t['symbol'].endswith('USDT')][:10]
+
+                    if not symbols:
+                        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+
+                    print(f"Evolving on symbols: {symbols}")
+
+                    # 1. Evaluate current generation on these symbols
+                    # This might be slow. We loop.
+                    # Note: GeneticBreeder.evaluate_population takes one symbol.
+                    # We should probably pick ONE random symbol from the top list to optimize for this cycle
+                    # OR update GeneticBreeder to handle multiple.
+                    # For simplicity: Pick top 1 (BTC) and one random altcoin
+                    import random
+                    target_symbol = random.choice(symbols)
+
+                    # Run Evaluation
+                    print(f"Evaluating Gen {settings.last_evolution_time} on {target_symbol}...")
+                    breeder.evaluate_population(generation=0, symbol=target_symbol) # Simplified: Assume single generation tracking or we need to track max gen
+
+                    # We need to know the current max generation.
+                    # Query DB
+                    max_gen_strat = db.query(Strategy).order_by(Strategy.generation.desc()).first()
+                    current_gen = max_gen_strat.generation if max_gen_strat else 0
+
+                    breeder.evaluate_population(generation=current_gen, symbol=target_symbol)
+                    breeder.breed_next_generation(current_gen=current_gen)
+
+                    print("Evolution cycle complete.")
+
+            db.close()
+        except Exception as e:
+            print(f"Evolution Loop Error: {e}")
+            traceback.print_exc()
+
+        time.sleep(60) # Check every minute
+
 def bot_loop():
     """
     Background process that runs the trading logic.
@@ -41,8 +118,19 @@ def bot_loop():
                 # Get Active Strategy
                 active_strategy = db.query(Strategy).filter(Strategy.is_active == True).first()
 
-                # Symbols to trade (Hardcoded or fetch from DB/Settings later)
-                symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+                # Dynamic Symbol Fetching
+                symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Default
+                if client:
+                     # Refresh symbols periodically or every loop? Every loop is too heavy.
+                     # Just fetch Top 20 by volume for trading context
+                     try:
+                        tickers = client.get_tickers()
+                        if tickers and 'result' in tickers:
+                            # Sort by turnover
+                            sorted_tickers = sorted(tickers['result']['list'], key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+                            symbols = [t['symbol'] for t in sorted_tickers if t['symbol'].endswith('USDT')][:20]
+                     except Exception as e:
+                        print(f"Symbol fetch error: {e}")
 
                 if client and active_strategy and settings.is_active:
                     print(f"Running Strategy: {active_strategy.name} on {len(symbols)} pairs...")
@@ -263,6 +351,11 @@ def main():
         print("Starting Bot Loop...")
         bot_thread = threading.Thread(target=bot_loop, daemon=True)
         bot_thread.start()
+
+        # Start Evolution Loop
+        print("Starting Evolution Loop...")
+        evo_thread = threading.Thread(target=evolution_loop, daemon=True)
+        evo_thread.start()
 
         # Check if running as GUI
         gui_mode = "--gui" in sys.argv

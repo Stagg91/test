@@ -32,6 +32,17 @@
             <div class="card-header"><i class="fa-solid fa-sliders"></i> Configuration</div>
             <div class="card-body">
                 <form id="backtestForm">
+
+                    <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="pills-manual-tab" data-bs-toggle="pill" data-bs-target="#pills-manual" type="button" role="tab" onclick="setMode('manual')">Manual</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="pills-ai-tab" data-bs-toggle="pill" data-bs-target="#pills-ai" type="button" role="tab" onclick="setMode('ai')">AI Strategy</button>
+                        </li>
+                    </ul>
+                    <input type="hidden" name="strategy_mode" id="strategyMode" value="manual">
+
                     <div class="mb-3">
                         <label class="form-label">Symbol</label>
                         <input type="text" list="symbolList" name="symbol" class="form-control" value="{{ config.symbol if config else 'BTCUSDT' }}" placeholder="Type to search...">
@@ -68,28 +79,48 @@
                     </div>
 
                     <hr class="border-secondary">
-                    <h6 class="text-gold">RSI Strategy</h6>
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" {% if not config or config.rsi_enabled %}checked{% endif %}>
-                        <label class="form-check-label">Enable RSI</label>
-                    </div>
-                    <div class="input-group mb-2">
-                        <span class="input-group-text bg-dark text-muted border-secondary">Lower Start</span>
-                        <input type="number" name="rsi_lower_start" class="form-control" value="{{ config.rsi_lower_start if config else 20 }}">
-                    </div>
-                    <div class="input-group mb-2">
-                        <span class="input-group-text bg-dark text-muted border-secondary">Lower Stop</span>
-                        <input type="number" name="rsi_lower_stop" class="form-control" value="{{ config.rsi_lower_stop if config else 40 }}">
-                    </div>
-                    <div class="input-group mb-3">
-                        <span class="input-group-text bg-dark text-muted border-secondary">Step</span>
-                        <input type="number" name="rsi_lower_step" class="form-control" value="{{ config.rsi_lower_step if config else 5 }}">
-                    </div>
 
-                    <h6 class="text-gold">MACD Strategy</h6>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="macd_enabled" value="true" {% if config and config.macd_enabled %}checked{% endif %}>
-                        <label class="form-check-label">Enable MACD</label>
+                    <div class="tab-content" id="pills-tabContent">
+                        <!-- Manual Config -->
+                        <div class="tab-pane fade show active" id="pills-manual" role="tabpanel">
+                            <h6 class="text-gold">RSI Strategy</h6>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="rsi_enabled" value="true" {% if not config or config.rsi_enabled %}checked{% endif %}>
+                                <label class="form-check-label">Enable RSI</label>
+                            </div>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text bg-dark text-muted border-secondary">Lower Start</span>
+                                <input type="number" name="rsi_lower_start" class="form-control" value="{{ config.rsi_lower_start if config else 20 }}">
+                            </div>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text bg-dark text-muted border-secondary">Lower Stop</span>
+                                <input type="number" name="rsi_lower_stop" class="form-control" value="{{ config.rsi_lower_stop if config else 40 }}">
+                            </div>
+                            <div class="input-group mb-3">
+                                <span class="input-group-text bg-dark text-muted border-secondary">Step</span>
+                                <input type="number" name="rsi_lower_step" class="form-control" value="{{ config.rsi_lower_step if config else 5 }}">
+                            </div>
+
+                            <h6 class="text-gold">MACD Strategy</h6>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" name="macd_enabled" value="true" {% if config and config.macd_enabled %}checked{% endif %}>
+                                <label class="form-check-label">Enable MACD</label>
+                            </div>
+                        </div>
+
+                        <!-- AI Strategy Config -->
+                        <div class="tab-pane fade" id="pills-ai" role="tabpanel">
+                            <h6 class="text-gold">Select AI Strategy</h6>
+                            <div class="mb-3">
+                                <select name="strategy_id" class="form-select">
+                                    <option value="" selected disabled>Choose a strategy...</option>
+                                    {% for strat in strategies %}
+                                    <option value="{{ strat.id }}">[{{ strat.generation }}] {{ strat.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <p class="text-muted small">Runs the exact logic of the selected AI strategy on the chosen symbol/timeframe.</p>
+                        </div>
                     </div>
 
                     <button type="button" onclick="runBacktest()" class="btn btn-primary w-100">
@@ -141,6 +172,10 @@ async function loadSymbols() {
     }
 }
 loadSymbols();
+
+function setMode(mode) {
+    document.getElementById('strategyMode').value = mode;
+}
 
 async function runBacktest() {
     const form = document.getElementById('backtestForm');

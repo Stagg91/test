@@ -65,10 +65,13 @@ class GeneticBreeder:
         # 2. AI Generated Strategies
         for i in range(count):
             try:
-                code = self.ai_agent.generate_strategy_code(prompt + f" Variation {i+1}")
+                result = self.ai_agent.generate_strategy_code(prompt + f" Variation {i+1}")
+                code = result.get("code")
+                name = result.get("name", f"Gen0_AI_{i+1}")
+
                 if code:
                     s_ai = Strategy(
-                        name=f"Gen0_AI_{i+1}",
+                        name=name,
                         code=code,
                         class_name="AIStrategy",
                         type="ai_gen",

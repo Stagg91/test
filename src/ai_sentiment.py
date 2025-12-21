@@ -2,14 +2,14 @@ import google.generativeai as genai
 import os
 import requests
 import random
+import feedparser
 
 class AISentimentAgent:
     def __init__(self, gemini_api_key=None):
         self.api_key = gemini_api_key
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            # Switch to gemini-pro as 1.5-flash causes 404 in v1beta
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
         else:
             self.model = None
 
@@ -30,32 +30,37 @@ class AISentimentAgent:
 
     def fetch_crypto_news(self):
         """
-        Fetches latest crypto news.
-        Tries to fetch from a public RSS feed or API.
+        Fetches latest crypto news from multiple RSS feeds.
         """
-        try:
-            # CoinDesk RSS Feed
-            url = "https://www.coindesk.com/arc/outboundfeeds/rss/"
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                # Simple parsing of XML/RSS without extra deps like feedparser if possible,
-                # otherwise just regex or simple find.
-                # Since we don't have feedparser in requirements, let's just grab titles coarsely
-                import re
-                content = response.text
-                titles = re.findall(r'<title>(.*?)</title>', content)
-                # Filter out short/generic titles
-                return [t for t in titles if len(t) > 20][:5]
-        except Exception as e:
-            print(f"Error fetching news: {e}")
-
-        # Fallback if fetch fails
-        headlines = [
-            "Bitcoin market shows resilience amidst volatility.",
-            "New regulations could impact crypto trading volumes.",
-            "Ethereum upgrades expected to improve scalability."
+        feeds = [
+            "https://www.coindesk.com/arc/outboundfeeds/rss/",
+            "https://cointelegraph.com/rss",
+            "https://cryptoslate.com/feed/"
         ]
-        return headlines
+
+        all_headlines = []
+
+        for feed_url in feeds:
+            try:
+                feed = feedparser.parse(feed_url)
+                if feed.entries:
+                    # Get top 3 from each
+                    for entry in feed.entries[:3]:
+                        if hasattr(entry, 'title'):
+                             all_headlines.append(entry.title)
+            except Exception as e:
+                print(f"Error fetching feed {feed_url}: {e}")
+
+        # Fallback
+        if not all_headlines:
+             all_headlines = [
+                "Bitcoin market shows resilience amidst volatility.",
+                "New regulations could impact crypto trading volumes.",
+                "Ethereum upgrades expected to improve scalability."
+            ]
+
+        # Deduplicate and limit
+        return list(set(all_headlines))[:10]
 
     def get_market_sentiment(self):
         """
@@ -67,8 +72,6 @@ class AISentimentAgent:
         print(f"Analyzing {len(news)} news items for sentiment...")
 
         for headline in news:
-            # If we don't have an API key, we might just randomize or use a heuristic
-            # But the requirement is to use Gemini IF available.
             if self.model:
                 sentiment = self.analyze_text(headline)
             else:
@@ -142,17 +145,21 @@ class AISentimentAgent:
                 "symbol": "BTCUSDT"
             }
 
-    def generate_strategy_code(self, prompt: str) -> str:
+    def generate_strategy_code(self, prompt: str) -> dict:
         """
         Generates Python code for a trading strategy based on a prompt.
+        Returns a dict: {'name': 'Name', 'code': 'Code'}
         """
         if not self.model:
-            return ""
+            return {"name": "NoAPI_Strategy", "code": ""}
 
         query = f"""
-        You are an expert algorithmic trading developer. Write a Python class named `AIStrategy` that inherits from `BaseStrategy`.
-
+        You are an expert algorithmic trading developer.
         The user wants: "{prompt}"
+
+        Task:
+        1. Create a creative and descriptive name for this strategy (e.g., "RSI_Scalper_Aggressive", "MACD_Trend_Follower").
+        2. Write a Python class named `AIStrategy` that inherits from `BaseStrategy`.
 
         Requirements:
         1. Import `BaseStrategy` from `src.strategies.base` (assume it's available).
@@ -163,22 +170,28 @@ class AISentimentAgent:
            - "signal": "buy", "sell", or "hold"
            - "confidence": float 0.0-1.0
            - "metadata": dict with calculated indicator values.
-        6. Do not include markdown formatting like ```python. Just the code.
-        7. Ensure the code is syntactically correct and robust (handle empty dataframes check).
-        8. IMPORTANT: Include the following imports at the top of the code to ensure it runs in the restricted environment:
+        6. Include the following imports at the top of the code:
            import sys
            import os
            if os.getcwd() not in sys.path: sys.path.append(os.getcwd())
 
-        Code:
+        Output Format:
+        Return strictly a JSON object with two keys:
+        {{
+            "name": "StrategyName",
+            "code": "Full Python Code Here"
+        }}
+        Do not use markdown formatting.
         """
         try:
             response = self.model.generate_content(query)
-            code = response.text.replace("```python", "").replace("```", "").strip()
-            return code
+            text = response.text.replace("```json", "").replace("```", "").strip()
+            import json
+            result = json.loads(text)
+            return result
         except Exception as e:
             print(f"Strategy Gen Error: {e}")
-            return ""
+            return {"name": "Error_Strategy", "code": ""}
 
     def mutate_strategy_code(self, code: str, feedback: str) -> str:
         """
