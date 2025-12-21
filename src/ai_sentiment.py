@@ -141,3 +141,67 @@ class AISentimentAgent:
                 "macd_enabled": False,
                 "symbol": "BTCUSDT"
             }
+
+    def generate_strategy_code(self, prompt: str) -> str:
+        """
+        Generates Python code for a trading strategy based on a prompt.
+        """
+        if not self.model:
+            return ""
+
+        query = f"""
+        You are an expert algorithmic trading developer. Write a Python class named `AIStrategy` that inherits from `BaseStrategy`.
+
+        The user wants: "{prompt}"
+
+        Requirements:
+        1. Import `BaseStrategy` from `src.strategies.base` (assume it's available).
+        2. Implement `on_candle(self, df: pd.DataFrame) -> dict` method.
+        3. The input `df` has columns: `open`, `high`, `low`, `close`, `volume` (all numeric).
+        4. You MUST implement logic using pandas or numpy to calculate indicators inside the method (do not assume TA-Lib is installed, use pandas directly or calculate manually).
+        5. Return a dictionary with:
+           - "signal": "buy", "sell", or "hold"
+           - "confidence": float 0.0-1.0
+           - "metadata": dict with calculated indicator values.
+        6. Do not include markdown formatting like ```python. Just the code.
+        7. Ensure the code is syntactically correct and robust (handle empty dataframes check).
+
+        Code:
+        """
+        try:
+            response = self.model.generate_content(query)
+            code = response.text.replace("```python", "").replace("```", "").strip()
+            return code
+        except Exception as e:
+            print(f"Strategy Gen Error: {e}")
+            return ""
+
+    def mutate_strategy_code(self, code: str, feedback: str) -> str:
+        """
+        Modifies an existing strategy code based on feedback (performance results).
+        """
+        if not self.model:
+            return code
+
+        query = f"""
+        You are an expert algorithmic trading developer optimization engine.
+
+        Here is an existing Python strategy class:
+
+        {code}
+
+        Performance/Feedback: "{feedback}"
+
+        Task:
+        1. Analyze the code and the feedback.
+        2. Make subtle or significant changes to the logic to improve performance (e.g. change thresholds, add a filter, change indicator period).
+        3. Keep the class name `AIStrategy` and structure.
+        4. Return ONLY the full updated Python code. No markdown.
+        """
+        try:
+            response = self.model.generate_content(query)
+            new_code = response.text.replace("```python", "").replace("```", "").strip()
+            return new_code
+        except Exception as e:
+            print(f"Strategy Mutation Error: {e}")
+            return code

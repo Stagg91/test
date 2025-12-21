@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 import pandas as pd
 import json
 
-from src.database import SessionLocal, engine, Settings, init_db, User
+from src.database import SessionLocal, engine, Settings, init_db, User, Strategy, BacktestResult
 from src.bybit_client import BybitClient
 from src.data_engine import DataEngine
 from src.indicators import IndicatorEngine
 from src.backtester import Backtester, combined_strategy
+from src.genetic_engine import GeneticBreeder
 # Import ML Engine conditionally
 try:
     from src.ml_engine import MLEngine
@@ -327,6 +328,62 @@ async def run_backtest(
     results = bt.grid_search(combined_strategy, param_grid)
 
     return results[0:10]
+
+@app.get("/strategies", response_class=HTMLResponse)
+async def strategies_page(request: Request, db: Session = Depends(get_db)):
+    strategies = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
+    return templates.TemplateResponse("strategies.html", {"request": request, "strategies": strategies})
+
+@app.post("/strategies/generate")
+async def generate_strategies(
+    request: Request,
+    prompt: str = Form("Robust trend following strategy"),
+    count: int = Form(3),
+    db: Session = Depends(get_db)
+):
+    settings = db.query(Settings).first()
+    key = settings.gemini_api_key if settings else None
+
+    breeder = GeneticBreeder(gemini_api_key=key)
+    new_strats = breeder.create_generation_zero(prompt=prompt, count=count)
+
+    return RedirectResponse("/strategies", status_code=303)
+
+@app.post("/strategies/activate/{strat_id}")
+async def activate_strategy(strat_id: int, db: Session = Depends(get_db)):
+    # Deactivate all
+    db.query(Strategy).update({Strategy.is_active: False})
+    # Activate target
+    strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+    if strat:
+        strat.is_active = True
+        db.commit()
+    return RedirectResponse("/strategies", status_code=303)
+
+@app.get("/evolution", response_class=HTMLResponse)
+async def evolution_page(request: Request, db: Session = Depends(get_db)):
+    # Get Generation Stats
+    results = db.query(BacktestResult).all()
+    # Group by strategy generation? Need to join
+    data = []
+    # Simplified view: List all backtest results joined with strategy info
+    rows = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).order_by(BacktestResult.roi.desc()).limit(50).all()
+
+    return templates.TemplateResponse("evolution.html", {"request": request, "results": rows})
+
+@app.post("/evolution/run_generation")
+async def run_generation(request: Request, generation: int = Form(0), db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    key = settings.gemini_api_key if settings else None
+    breeder = GeneticBreeder(gemini_api_key=key)
+
+    # 1. Evaluate current gen
+    breeder.evaluate_population(generation=generation)
+
+    # 2. Breed next gen
+    breeder.breed_next_generation(current_gen=generation)
+
+    return RedirectResponse("/evolution", status_code=303)
 
 @app.get("/synopsis", response_class=HTMLResponse)
 async def synopsis_page(request: Request, db: Session = Depends(get_db)):

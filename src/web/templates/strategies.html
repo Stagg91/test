@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Strategy Laboratory</h2>
+
+    <div class="card mb-4">
+        <div class="card-header">Generate New Strategies</div>
+        <div class="card-body">
+            <form action="/strategies/generate" method="post">
+                <div class="mb-3">
+                    <label>Prompt / Goal</label>
+                    <input type="text" name="prompt" class="form-control" value="Robust trend following strategy with RSI filter">
+                </div>
+                <div class="mb-3">
+                    <label>Count</label>
+                    <input type="number" name="count" class="form-control" value="3">
+                </div>
+                <button type="submit" class="btn btn-primary">Generate (Gen 0)</button>
+            </form>
+        </div>
+    </div>
+
+    <h3>Strategy Library</h3>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Gen</th>
+                <th>Active</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in strategies %}
+            <tr>
+                <td>{{ s.id }}</td>
+                <td>{{ s.name }}</td>
+                <td><span class="badge bg-secondary">{{ s.type }}</span></td>
+                <td>{{ s.generation }}</td>
+                <td>
+                    {% if s.is_active %}
+                    <span class="badge bg-success">ACTIVE</span>
+                    {% else %}
+                    <span class="badge bg-light text-dark">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form action="/strategies/activate/{{ s.id }}" method="post" class="d-inline">
+                        <button class="btn btn-sm btn-success">Activate</button>
+                    </form>
+                    <button class="btn btn-sm btn-info" onclick="alert(`{{ s.code|replace('`', '')|replace('\n', '\\n') }}`)">View Code</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
