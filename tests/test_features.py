@@ -11,9 +11,16 @@ def test_paper_trader():
     init_db()
     db = SessionLocal()
     # Create default settings
-    if not db.query(Settings).first():
-        db.add(Settings(paper_trading=True, paper_balance=5000.0))
+    s = db.query(Settings).first()
+    if not s:
+        s = Settings(paper_trading=True, paper_balance=5000.0)
+        db.add(s)
         db.commit()
+    else:
+        # Reset balance for test
+        s.paper_balance = 5000.0
+        db.commit()
+
     db.close()
 
     pt = PaperTrader()

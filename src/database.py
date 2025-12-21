@@ -28,12 +28,32 @@ class Notification(Base):
     timestamp = Column(Float)
     read = Column(Boolean, default=False)
 
-class StrategyConfig(Base):
+class Strategy(Base):
     __tablename__ = 'strategies'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    parameters = Column(JSON)
+    code = Column(String)  # Python source code
+    class_name = Column(String) # Class name to instantiate
+    type = Column(String, default="manual") # manual, ai_gen, evolved
+    generation = Column(Integer, default=0)
+    parent_id = Column(Integer, nullable=True) # ID of parent strategy
     is_active = Column(Boolean, default=False)
+    created_at = Column(Float)
+
+class BacktestResult(Base):
+    __tablename__ = 'backtest_results'
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer)
+    symbol = Column(String)
+    start_date = Column(String)
+    end_date = Column(String)
+    roi = Column(Float)
+    sharpe = Column(Float)
+    max_drawdown = Column(Float)
+    win_rate = Column(Float)
+    trades_count = Column(Integer)
+    metrics_json = Column(JSON) # Full metrics dump
+    timestamp = Column(Float)
 
 class TradeLog(Base):
     __tablename__ = 'trades'
@@ -71,4 +91,16 @@ engine = create_engine(db_url, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
+    # Basic migration hack: Check if 'strategies' table has 'code' column.
+    # If not, drop it to recreate.
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    if inspector.has_table("strategies"):
+        columns = [c['name'] for c in inspector.get_columns("strategies")]
+        if "code" not in columns:
+            print("Detected old schema for 'strategies'. Dropping table to migrate...")
+            with engine.connect() as conn:
+                conn.execute(text("DROP TABLE strategies"))
+                conn.commit()
+
     Base.metadata.create_all(bind=engine)

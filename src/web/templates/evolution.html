@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Genetic Evolution Engine</h2>
+
+    <div class="card mb-4">
+        <div class="card-header">Evolve Generation</div>
+        <div class="card-body">
+            <p>Select a generation to evaluate and breed from. This will run backtests on all strategies in that generation, select the best ones, and use AI to mutate them into the next generation.</p>
+            <form action="/evolution/run_generation" method="post">
+                <div class="mb-3">
+                    <label>Generation ID</label>
+                    <input type="number" name="generation" class="form-control" value="0">
+                </div>
+                <button type="submit" class="btn btn-warning">Run Evolution Cycle</button>
+            </form>
+        </div>
+    </div>
+
+    <h3>Performance Matrix (Top 50)</h3>
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Strat ID</th>
+                <th>Name</th>
+                <th>Gen</th>
+                <th>ROI %</th>
+                <th>Sharpe</th>
+                <th>Max DD %</th>
+                <th>Win Rate %</th>
+                <th>Trades</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for res, strat in results %}
+            <tr>
+                <td>{{ strat.id }}</td>
+                <td>{{ strat.name }}</td>
+                <td>{{ strat.generation }}</td>
+                <td class="{% if res.roi > 0 %}text-success{% else %}text-danger{% endif %}">{{ "%.2f"|format(res.roi) }}</td>
+                <td>{{ "%.2f"|format(res.sharpe) }}</td>
+                <td>{{ "%.2f"|format(res.max_drawdown) }}</td>
+                <td>{{ "%.2f"|format(res.win_rate) }}</td>
+                <td>{{ res.trades_count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -3,16 +3,15 @@ import threading
 import time
 import pandas as pd
 from src.web.app import app
-from src.database import SessionLocal, Settings
+from src.database import SessionLocal, Settings, Strategy
 from src.bybit_client import BybitClient
 from src.paper_trader import PaperTrader
-from src.indicators import IndicatorEngine
-from src.ai_sentiment import AISentimentAgent
-# Import ML Engine if available
-try:
-    from src.ml_engine import MLEngine
-except ImportError:
-    MLEngine = None
+from src.risk_manager import RiskManager
+from src.notifications import NotificationManager
+import traceback
+
+# Global Risk Manager
+risk_manager = RiskManager()
 
 def bot_loop():
     """
@@ -28,88 +27,111 @@ def bot_loop():
                 # Decide which client to use
                 if settings.paper_trading:
                     client = PaperTrader(testnet=settings.testnet)
-                    # print("Using Paper Trader")
                 elif settings.api_key and settings.api_secret:
                     client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
                 else:
                     client = None
 
-                if client:
-                    # Default Strategy: RSI + Sentiment (Example)
-                    # 1. Fetch Data
-                    symbol = "BTCUSDT"
-                    # Get last 200 candles
-                    candles = client.session.get_kline(category="linear", symbol=symbol, interval="60", limit=200)
-                    data = candles.get('result', {}).get('list', [])
-                    if data:
-                        df = pd.DataFrame(data, columns=['startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-                        # Clean data
-                        df['close'] = pd.to_numeric(df['close'])
-                        # Reverse to have oldest first for indicators
-                        df = df.iloc[::-1].reset_index(drop=True)
+                # Get Active Strategy
+                active_strategy = db.query(Strategy).filter(Strategy.is_active == True).first()
 
-                        # 2. Add Indicators
-                        df = IndicatorEngine.add_indicators(df)
+                # Symbols to trade (Hardcoded or fetch from DB/Settings later)
+                symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
-                        # 3. Analyze Sentiment
-                        sentiment_score = "NEUTRAL"
-                        if settings.gemini_api_key:
-                            ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
-                            sentiment_score = ai_agent.get_market_sentiment()
+                if client and active_strategy and settings.is_active:
+                    print(f"Running Strategy: {active_strategy.name} on {len(symbols)} pairs...")
 
-                        # 4. ML Prediction
-                        ml_prob = 0.5
-                        if MLEngine:
+                    # Instantiate Strategy
+                    try:
+                        local_scope = {}
+                        exec(active_strategy.code, {}, local_scope)
+                        StrategyClass = local_scope.get(active_strategy.class_name)
+                        strategy_instance = StrategyClass()
+                    except Exception as e:
+                        print(f"Strategy instantiation failed: {e}")
+                        strategy_instance = None
+
+                    if strategy_instance:
+                        for symbol in symbols:
                             try:
-                                ml_model = MLEngine()
-                                ml_prob = ml_model.predict_probability(df)
+                                # 1. Fetch Data
+                                candles = client.session.get_kline(category="linear", symbol=symbol, interval="60", limit=200)
+                                data = candles.get('result', {}).get('list', [])
+                                if not data:
+                                    continue
+
+                                df = pd.DataFrame(data, columns=['startTime', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                                df['close'] = pd.to_numeric(df['close'])
+                                df = df.iloc[::-1].reset_index(drop=True) # Oldest first
+
+                                # 2. Run Strategy
+                                decision = strategy_instance.on_candle(df)
+                                signal = decision.get("signal", "hold")
+
+                                # 3. Check Positions
+                                positions = client.session.get_positions(category="linear", symbol=symbol)
+                                pos_list = positions.get('result', {}).get('list', [])
+                                current_size = 0
+                                for p in pos_list:
+                                    current_size = float(p.get('size', 0))
+
+                                if signal == "buy" and current_size == 0:
+                                    # Risk Check
+                                    # Need current balance
+                                    bal_resp = client.get_balance("USDT")
+                                    balance = 0.0
+                                    if bal_resp:
+                                        balance = float(bal_resp.get('result', {}).get('list', [{}])[0].get('equity', 0))
+
+                                    trade_size_usdt = 100.0 # Fixed for now or dynamic
+                                    allowed, reason = risk_manager.check_trade_allowed(symbol, trade_size_usdt, balance)
+
+                                    if allowed:
+                                        print(f"[{symbol}] BUY Signal. Executing...")
+                                        # Calc qty
+                                        last_price = float(df.iloc[-1]['close'])
+                                        qty = trade_size_usdt / last_price
+                                        # Round qty? Bybit requires specific precision.
+                                        # Simple rounding for now:
+                                        qty = round(qty, 3)
+
+                                        client.open_trade(symbol, "Buy", qty, "Market")
+                                        risk_manager.record_trade_open()
+                                        NotificationManager.send("Trade Executed", f"Bought {symbol} via {active_strategy.name}")
+                                    else:
+                                        print(f"[{symbol}] Buy blocked by Risk Manager: {reason}")
+
+                                elif signal == "sell" and current_size > 0:
+                                    print(f"[{symbol}] SELL Signal. Closing...")
+                                    client.close_position(symbol)
+
+                                    # Estimate PnL for Risk Manager
+                                    # We don't have entry price in position list efficiently here without tracking it in DB or looping positions again
+                                    # But we can iterate positions earlier.
+                                    entry_price_est = 0.0
+                                    for p in pos_list:
+                                        if float(p.get('size', 0)) > 0:
+                                            entry_price_est = float(p.get('avgPrice', 0))
+                                            break
+
+                                    current_price = float(df.iloc[-1]['close'])
+                                    if entry_price_est > 0:
+                                        # Long only logic for now
+                                        pnl_est = (current_price - entry_price_est) * current_size
+                                        risk_manager.record_trade_close(pnl=pnl_est)
+                                    else:
+                                        risk_manager.record_trade_close(pnl=0)
+
+                                    NotificationManager.send("Trade Closed", f"Sold {symbol} via {active_strategy.name}")
+
                             except Exception as e:
-                                print(f"ML Prediction Failed: {e}")
+                                print(f"Error processing {symbol}: {e}")
+                                traceback.print_exc()
 
-                        # 5. Check Signal (RSI + Sentiment + ML)
-                        last_row = df.iloc[-1]
-                        rsi = last_row.get('RSI_14')
-
-                        if rsi:
-                            print(f"[{symbol}] Price: {last_row['close']}, RSI: {rsi:.2f}, Sentiment: {sentiment_score}, ML Prob: {ml_prob:.2f}")
-
-                            # Logic:
-                            # Buy if RSI < 30 AND Sentiment != BEARISH AND ML Probability > 0.6
-                            # Sell if RSI > 70
-
-                            # Check current position (simplified, assumes 1 position max)
-                            positions = client.session.get_positions(category="linear", symbol=symbol)
-                            pos_list = positions.get('result', {}).get('list', [])
-                            current_size = 0
-                            for p in pos_list:
-                                current_size = float(p.get('size', 0))
-
-                            if current_size == 0:
-                                # Enhanced Strategy: Added ML Prob check (> 0.55 means > 55% chance of UP)
-                                if rsi < 30 and sentiment_score != "BEARISH" and ml_prob > 0.55:
-                                    print("Signal: BUY")
-                                    if settings.is_active:
-                                        try:
-                                            client.open_trade(symbol, "Buy", 0.001, "Market")
-                                            from src.notifications import NotificationManager
-                                            NotificationManager.send("Trade Executed", f"Bought {symbol} at Market (RSI: {rsi:.2f})")
-                                        except Exception as e:
-                                            print(f"Trade Failed: {e}")
-                                    else:
-                                        print("Trading disabled in settings.")
-
-                            else:
-                                if rsi > 70:
-                                    print("Signal: SELL (Close)")
-                                    if settings.is_active:
-                                        try:
-                                            client.close_position(symbol)
-                                            from src.notifications import NotificationManager
-                                            NotificationManager.send("Trade Closed", f"Sold {symbol} (RSI: {rsi:.2f})")
-                                        except Exception as e:
-                                            print(f"Close Failed: {e}")
-                                    else:
-                                         print("Trading disabled in settings.")
+            db.close()
+        except Exception as e:
+            print(f"Bot Loop Error: {e}")
+            traceback.print_exc()
 
             db.close()
         except Exception as e:
