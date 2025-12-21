@@ -9,6 +9,8 @@ from src.paper_trader import PaperTrader
 from src.risk_manager import RiskManager
 from src.notifications import NotificationManager
 import traceback
+import sys
+import os
 
 # Global Risk Manager
 risk_manager = RiskManager()
@@ -17,6 +19,10 @@ def bot_loop():
     """
     Background process that runs the trading logic.
     """
+    # Ensure root is in path for dynamic imports
+    if os.getcwd() not in sys.path:
+        sys.path.append(os.getcwd())
+
     print("Bot loop started...")
     while True:
         try:

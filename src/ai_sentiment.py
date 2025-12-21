@@ -8,8 +8,8 @@ class AISentimentAgent:
         self.api_key = gemini_api_key
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            # Use 1.5 Flash as requested/newer standard, fallback to pro if needed
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            # Switch to gemini-pro as 1.5-flash causes 404 in v1beta
+            self.model = genai.GenerativeModel('gemini-pro')
         else:
             self.model = None
 
