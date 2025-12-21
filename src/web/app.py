@@ -12,6 +12,7 @@ from src.data_engine import DataEngine
 from src.indicators import IndicatorEngine
 from src.backtester import Backtester, combined_strategy
 from src.genetic_engine import GeneticBreeder
+from src.data_downloader import DataDownloader
 # Import ML Engine conditionally
 try:
     from src.ml_engine import MLEngine
@@ -552,3 +553,23 @@ async def train_ml():
     score = ml.train_model(df)
 
     return {"message": "Model retrained", "accuracy_score": score}
+
+@app.post("/api/sync_data")
+async def sync_data():
+    downloader = DataDownloader()
+    msg = downloader.start_sync()
+    return {"status": msg}
+
+@app.get("/api/history")
+async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int = 200):
+    from src.data_warehouse import DataWarehouse
+    warehouse = DataWarehouse()
+    df = warehouse.load_data(symbol, interval, limit=limit)
+    if df.empty:
+        # Fallback to DataEngine which fetches from API
+        de = DataEngine()
+        df = de.fetch_ohlcv(symbol, interval=interval, limit=limit)
+
+    # Handle NaN
+    df = df.where(pd.notnull(df), None)
+    return df.to_dict(orient="records")

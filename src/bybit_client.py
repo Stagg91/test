@@ -139,3 +139,25 @@ class BybitClient:
         except Exception as e:
             print(f"Error fetching tickers: {e}")
             return None
+
+    def fetch_full_history(self, symbol: str, interval: str, start_time: int = None, end_time: int = None, limit: int = 200):
+        """
+        Fetches historical kline data.
+        """
+        try:
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit
+            }
+            if start_time:
+                params["start"] = start_time
+            if end_time:
+                params["end"] = end_time
+
+            response = self.session.get_kline(**params)
+            return response.get('result', {}).get('list', [])
+        except Exception as e:
+            print(f"Error fetching history for {symbol}: {e}")
+            return []

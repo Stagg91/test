@@ -133,10 +133,6 @@ def bot_loop():
             print(f"Bot Loop Error: {e}")
             traceback.print_exc()
 
-            db.close()
-        except Exception as e:
-            print(f"Bot Loop Error: {e}")
-
         time.sleep(60) # Run every minute
 
 import sys
