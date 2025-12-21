@@ -1,0 +1,126 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Backtest Results: <span class="text-gold">ID #{{ result.id }}</span></h2>
+    <div class="mb-3">
+        <a href="/evolution" class="btn btn-secondary btn-sm"><i class="fa-solid fa-arrow-left"></i> Back to Evolution</a>
+        <a href="/strategies" class="btn btn-secondary btn-sm"><i class="fa-solid fa-flask"></i> Strategies</a>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">ROI</h5>
+                    <p class="card-text fs-4 {{ 'text-success' if result.roi > 0 else 'text-danger' }}">{{ "%.2f"|format(result.roi) }}%</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Sharpe Ratio</h5>
+                    <p class="card-text fs-4">{{ "%.2f"|format(result.sharpe) }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Max Drawdown</h5>
+                    <p class="card-text fs-4 text-danger">{{ "%.2f"|format(result.max_drawdown) }}%</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Win Rate</h5>
+                    <p class="card-text fs-4">{{ "%.2f"|format(result.win_rate) }}%</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Equity Curve -->
+    <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-chart-area"></i> Equity Curve</div>
+        <div class="card-body">
+            <div id="equityChart" style="width:100%;height:400px;"></div>
+        </div>
+    </div>
+
+    <!-- Trade Log -->
+    <div class="card">
+        <div class="card-header"><i class="fa-solid fa-list"></i> Trade Log ({{ trades|length }})</div>
+        <div class="card-body">
+            <div class="table-responsive" style="max_height: 500px; overflow-y: auto;">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>PnL %</th>
+                            <th>PnL $</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in trades %}
+                        <tr>
+                            <td>{{ t.timestamp }}</td>
+                            <td>LONG</td> <!-- Only long supported for now -->
+                            <td>{{ "%.2f"|format(t.entry) }}</td>
+                            <td>{{ "%.2f"|format(t.exit) }}</td>
+                            <td class="{{ 'text-success' if t.pnl > 0 else 'text-danger' }}">{{ "%.2f"|format(t.pnl) }}%</td>
+                            <td class="{{ 'text-success' if t.pnl_abs > 0 else 'text-danger' }}">{{ "%.2f"|format(t.pnl_abs) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Plotly -->
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+<script>
+    var equityData = {{ equity_curve|tojson }};
+    // Generate simple index for x-axis if timestamps missing in curve
+    var xData = Array.from({length: equityData.length}, (_, i) => i);
+
+    var trace1 = {
+      x: xData,
+      y: equityData,
+      mode: 'lines',
+      name: 'Equity',
+      line: {
+        color: '#FFD700',
+        width: 2
+      }
+    };
+
+    var layout = {
+      title: 'Strategy Performance',
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: {
+        color: '#fff'
+      },
+      xaxis: {
+        title: 'Candles',
+        gridcolor: '#444'
+      },
+      yaxis: {
+        title: 'Balance (USDT)',
+        gridcolor: '#444'
+      }
+    };
+
+    Plotly.newPlot('equityChart', [trace1], layout);
+</script>
+{% endblock %}

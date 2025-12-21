@@ -43,6 +43,7 @@
                 <td>{{ "%.2f"|format(res.max_drawdown) }}</td>
                 <td>{{ "%.2f"|format(res.win_rate) }}</td>
                 <td>{{ res.trades_count }}</td>
+                <td><a href="/backtest/result/{{ res.id }}" class="btn btn-sm btn-primary">Details</a></td>
             </tr>
             {% endfor %}
         </tbody>
