@@ -51,6 +51,9 @@
                     <form action="/strategies/activate/{{ s.id }}" method="post" class="d-inline">
                         <button class="btn btn-sm btn-success">Activate</button>
                     </form>
+                    <form action="/strategies/deactivate/{{ s.id }}" method="post" class="d-inline">
+                        <button class="btn btn-sm btn-danger">Deactivate</button>
+                    </form>
                     <form action="/strategies/backtest/{{ s.id }}" method="post" class="d-inline">
                         <button class="btn btn-sm btn-warning">Run Backtest</button>
                     </form>

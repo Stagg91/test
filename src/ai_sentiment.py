@@ -165,6 +165,10 @@ class AISentimentAgent:
            - "metadata": dict with calculated indicator values.
         6. Do not include markdown formatting like ```python. Just the code.
         7. Ensure the code is syntactically correct and robust (handle empty dataframes check).
+        8. IMPORTANT: Include the following imports at the top of the code to ensure it runs in the restricted environment:
+           import sys
+           import os
+           if os.getcwd() not in sys.path: sys.path.append(os.getcwd())
 
         Code:
         """

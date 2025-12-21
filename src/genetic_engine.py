@@ -21,6 +21,12 @@ class GeneticBreeder:
 
         # 1. Hardcoded Strategies
         hardcoded_code = textwrap.dedent("""
+        import sys
+        import os
+        # Ensure root is in path for imports
+        if os.getcwd() not in sys.path:
+            sys.path.append(os.getcwd())
+
         from src.strategies.base import BaseStrategy
         import pandas as pd
         import numpy as np
