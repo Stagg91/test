@@ -427,7 +427,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
     # Run a quick backtest for this strategy
     strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
     if not strat:
-        return RedirectResponse("/strategies", status_code=303)
+        return RedirectResponse("/strategies?error=StrategyNotFound", status_code=303)
 
     # Execute similar logic to GeneticBreeder but for single strat
     from src.data_engine import DataEngine
@@ -436,6 +436,11 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
 
     try:
         local_scope = {}
+        # Injection fix for Import Error
+        import sys
+        import os
+        if os.getcwd() not in sys.path: sys.path.append(os.getcwd())
+
         exec(strat.code, {}, local_scope)
         StrategyClass = local_scope.get(strat.class_name)
         if not StrategyClass:

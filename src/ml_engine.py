@@ -39,8 +39,16 @@ class MLEngine:
         # We need to drop NaNs created by indicators
 
         # Create Target: 1 if Next Close > Current Close (Up), 0 otherwise
-        # Ensure strict alignment
-        df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
+        # Ensure strict alignment: Reset index to ensure 0..N-1
+        df = df.reset_index(drop=True)
+        try:
+            target = (df['close'].shift(-1) > df['close']).astype(int)
+            # Fill last value (NaN from shift) with 0 to match length
+            target = target.fillna(0).astype(int)
+            df.loc[:, 'target'] = target
+        except Exception as e:
+            print(f"ML Feature Error: {e}")
+            df['target'] = 0
 
         # Select Feature Columns
         # We assume standard indicator names from pandas_ta defaults

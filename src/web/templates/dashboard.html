@@ -147,17 +147,14 @@
         const symbol = document.getElementById('chartSymbol').value;
         const interval = document.getElementById('chartInterval').value;
 
-        // Use new history API which checks Warehouse first
-        // Note: endpoint params might differ slightly from original chart_data
         try {
-            // Using /api/history instead of /api/chart_data
             const response = await fetch(`/api/history?symbol=${symbol}&interval=${interval}&limit=500`);
             if (!response.ok) throw new Error("Network response was not ok");
             const data = await response.json();
 
             if(data.error || data.length === 0) {
                 console.error("Chart Error:", data.error);
-                document.getElementById('chart').innerHTML = `<div class="alert alert-warning m-3">${data.error}</div>`;
+                document.getElementById('chart').innerHTML = `<div class="alert alert-warning m-3">No data available for ${symbol}. Please try Sync.</div>`;
                 return;
             }
 
@@ -166,6 +163,7 @@
             const high = data.map(r => r.high);
             const low = data.map(r => r.low);
             const close = data.map(r => r.close);
+            const volume = data.map(r => r.volume);
 
             const trace1 = {
                 x: dates,
@@ -178,7 +176,18 @@
                 open: open,
                 type: 'candlestick',
                 xaxis: 'x',
-                yaxis: 'y'
+                yaxis: 'y',
+                name: 'Price'
+            };
+
+            // Add Volume trace on secondary axis
+            const trace2 = {
+                x: dates,
+                y: volume,
+                type: 'bar',
+                name: 'Volume',
+                marker: {color: 'rgba(100,100,100,0.3)'},
+                yaxis: 'y2'
             };
 
             const layout = {
@@ -190,18 +199,23 @@
                 xaxis: {
                     autorange: true,
                     gridcolor: '#444',
-                    title: 'Date',
-                    type: 'date'
+                    type: 'date',
+                    rangeslider: {visible: false}
                 },
                 yaxis: {
-                    autorange: true,
+                    domain: [0.3, 1], // Price takes top 70%
                     gridcolor: '#444',
-                    type: 'linear'
+                    title: 'Price (USDT)'
                 },
-                margin: {l: 40, r: 10, t: 20, b: 40}
+                yaxis2: {
+                    domain: [0, 0.2], // Volume takes bottom 20%
+                    anchor: 'x',
+                    title: 'Volume'
+                },
+                margin: {l: 50, r: 20, t: 30, b: 40}
             };
 
-            Plotly.newPlot('chart', [trace1], layout, {responsive: true});
+            Plotly.newPlot('chart', [trace1, trace2], layout, {responsive: true});
         } catch (e) {
             console.error("Chart Load Failed:", e);
             document.getElementById('chart').innerHTML = `<div class="alert alert-danger m-3">Chart loading failed: ${e.message}</div>`;
@@ -219,8 +233,7 @@
                 return;
             }
 
-            // Render
-            window.marketData = data; // Store for search
+            window.marketData = data;
             renderMarketTable(data);
 
         } catch (e) {
