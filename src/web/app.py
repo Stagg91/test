@@ -361,6 +361,14 @@ async def activate_strategy(strat_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse("/strategies", status_code=303)
 
+@app.post("/strategies/deactivate/{strat_id}")
+async def deactivate_strategy(strat_id: int, db: Session = Depends(get_db)):
+    strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+    if strat:
+        strat.is_active = False
+        db.commit()
+    return RedirectResponse("/strategies", status_code=303)
+
 @app.get("/evolution", response_class=HTMLResponse)
 async def evolution_page(request: Request, db: Session = Depends(get_db)):
     # Get Generation Stats

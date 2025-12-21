@@ -28,13 +28,18 @@ class MLEngine:
         Generates features for ML.
         """
         # Ensure indicators exist
+        # Create a copy to avoid SettingWithCopy warnings and length mismatch issues during assignment
+        df = df.copy()
+
+        # IndicatorEngine uses pandas-ta which might return different indices/lengths if not careful
+        # We apply indicators to the copy
         df = IndicatorEngine.add_indicators(df)
 
         # Features: RSI, MACD lines, Close vs Open, Volume Change
         # We need to drop NaNs created by indicators
-        df = df.copy()
 
         # Create Target: 1 if Next Close > Current Close (Up), 0 otherwise
+        # Ensure strict alignment
         df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
 
         # Select Feature Columns

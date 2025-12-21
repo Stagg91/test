@@ -2,9 +2,23 @@ import pandas as pd
 import os
 import glob
 
+import sys
+
 class DataWarehouse:
-    def __init__(self, base_dir="data_warehouse"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir=None):
+        if base_dir:
+            self.base_dir = base_dir
+        else:
+            # Use user directory to ensure write permissions
+            app_name = "StaggsHecticTrader"
+            if sys.platform == "win32":
+                app_data = os.getenv("APPDATA")
+                path = os.path.join(app_data, app_name)
+            else:
+                path = os.path.join(os.path.expanduser("~"), "." + app_name.lower())
+
+            self.base_dir = os.path.join(path, "data_warehouse")
+
         os.makedirs(self.base_dir, exist_ok=True)
 
     def _get_path(self, symbol, interval):
