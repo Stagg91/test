@@ -190,7 +190,11 @@ class Backtester:
             "total_trades": total,
             "win_rate": (wins / total) if total > 0 else 0, # Tests expect 0-1 or 0-100? Tests expect ratio.
             "sharpe": 0.0, # Placeholder
-            "max_drawdown": 0.0 # Placeholder
+            "max_drawdown": 0.0, # Placeholder
+            # Include full details if available
+            "trades": trades,
+            # Note: equity_curve not available in calculate_metrics scope unless passed,
+            # but run_strategy_instance adds it.
         }
 
     def walk_forward_validation(self, strategy_instance, train_ratio=0.7):

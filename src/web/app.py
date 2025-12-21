@@ -385,6 +385,85 @@ async def run_generation(request: Request, generation: int = Form(0), db: Sessio
 
     return RedirectResponse("/evolution", status_code=303)
 
+@app.get("/backtest/result/{result_id}", response_class=HTMLResponse)
+async def backtest_result_page(request: Request, result_id: int, db: Session = Depends(get_db)):
+    res = db.query(BacktestResult).filter(BacktestResult.id == result_id).first()
+    if not res:
+        return RedirectResponse("/evolution")
+
+    import json
+    try:
+        metrics = json.loads(res.metrics_json)
+        # Handle if metrics are nested under 'test' (walk-forward) or flat (legacy/run_strategy_instance)
+        if 'test' in metrics:
+            details = metrics['test']
+        else:
+            details = metrics
+
+        trades = details.get('trades', [])
+        equity_curve = details.get('equity_curve', [])
+    except:
+        trades = []
+        equity_curve = []
+
+    return templates.TemplateResponse("backtest_result.html", {
+        "request": request,
+        "result": res,
+        "trades": trades,
+        "equity_curve": equity_curve
+    })
+
+@app.post("/strategies/backtest/{strat_id}")
+async def backtest_strategy_route(request: Request, strat_id: int, db: Session = Depends(get_db)):
+    # Run a quick backtest for this strategy
+    strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+    if not strat:
+        return RedirectResponse("/strategies", status_code=303)
+
+    # Execute similar logic to GeneticBreeder but for single strat
+    from src.data_engine import DataEngine
+    de = DataEngine()
+    df = de.fetch_ohlcv("BTCUSDT", interval="60", limit=1000)
+
+    try:
+        local_scope = {}
+        exec(strat.code, {}, local_scope)
+        StrategyClass = local_scope.get(strat.class_name)
+        if not StrategyClass:
+            return RedirectResponse("/strategies", status_code=303)
+
+        instance = StrategyClass()
+        from src.backtester import Backtester
+        bt = Backtester(df, initial_balance=10000)
+
+        # We run walk forward validation to be consistent
+        res = bt.walk_forward_validation(instance)
+
+        # Save result
+        test_res = res['test']
+        br = BacktestResult(
+            strategy_id=strat.id,
+            symbol="BTCUSDT",
+            start_date=str(df.iloc[0]['startTime']),
+            end_date=str(df.iloc[-1]['startTime']),
+            roi=test_res['roi_percent'],
+            sharpe=test_res['sharpe'],
+            max_drawdown=test_res['max_drawdown'],
+            win_rate=test_res['win_rate'] * 100,
+            trades_count=test_res['total_trades'],
+            metrics_json=json.dumps(res),
+            timestamp=time.time()
+        )
+        db.add(br)
+        db.commit()
+
+        # Redirect to result page
+        return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
+
+    except Exception as e:
+        print(f"Quick Backtest Error: {e}")
+        return RedirectResponse("/strategies", status_code=303)
+
 @app.get("/synopsis", response_class=HTMLResponse)
 async def synopsis_page(request: Request, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
@@ -392,58 +471,66 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
     # Fetch Data
     symbol = "BTCUSDT"
     de = DataEngine()
-    df = de.fetch_ohlcv(symbol, interval="60", limit=100)
 
     indicators = {}
     ml_prob = 0.5
     sentiment = "UNKNOWN"
     explanation = "Data unavailable."
 
-    if not df.empty:
-        df = IndicatorEngine.add_indicators(df)
-        last_row = df.iloc[-1]
+    try:
+        df = de.fetch_ohlcv(symbol, interval="60", limit=100)
 
-        # Format Indicators
-        indicators = {
-            "Close Price": last_row['close'],
-            "RSI (14)": f"{last_row.get('RSI_14', 0):.2f}",
-        }
-        if 'MACD_12_26_9' in last_row:
-             indicators['MACD'] = f"{last_row['MACD_12_26_9']:.2f}"
+        if not df.empty:
+            df = IndicatorEngine.add_indicators(df)
+            last_row = df.iloc[-1]
 
-        # ML Prediction
-        if MLEngine:
-            ml_agent = MLEngine()
-            ml_prob = ml_agent.predict_probability(df)
+            # Format Indicators
+            indicators = {
+                "Close Price": last_row['close'],
+                "RSI (14)": f"{last_row.get('RSI_14', 0):.2f}",
+            }
+            if 'MACD_12_26_9' in last_row:
+                 indicators['MACD'] = f"{last_row['MACD_12_26_9']:.2f}"
 
-        # Sentiment
-        if settings and settings.gemini_api_key:
-            ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
-            sentiment = ai_agent.get_market_sentiment()
-        else:
-             ai_agent = AISentimentAgent(gemini_api_key=None)
-             sentiment = ai_agent.get_market_sentiment() # Uses fallback
+            # ML Prediction
+            if MLEngine:
+                try:
+                    ml_agent = MLEngine()
+                    ml_prob = ml_agent.predict_probability(df)
+                except Exception as e:
+                    print(f"ML Error: {e}")
 
-        # AI Explanation
-        if settings and settings.gemini_api_key:
-            ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
-            prompt = (
-                f"Current market status for {symbol}: "
-                f"Price {last_row['close']}, RSI {last_row.get('RSI_14', 'N/A')}. "
-                f"ML Model predicts {ml_prob*100:.1f}% chance of price increase. "
-                f"News Sentiment is {sentiment}. "
-                "Explain the recommended trading strategy and rationale in 2 sentences."
-            )
-            # We reuse the analyze_text method or create a new one for generation
-            # Let's create a quick generation call here or update ai_sentiment.py
-            # For brevity, we call generate_content directly if we had access, but let's stick to using the agent wrapper if possible or expand it.
-            # Using the agent's model directly:
-            try:
-                explanation = ai_agent.model.generate_content(prompt).text
-            except:
-                explanation = "AI Explanation unavailable."
-        else:
-            explanation = "Configure Gemini API Key in settings to get AI-generated strategy explanation."
+            # Sentiment
+            if settings and settings.gemini_api_key:
+                ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
+                try:
+                    sentiment = ai_agent.get_market_sentiment()
+                except:
+                    sentiment = "ERROR"
+            else:
+                 ai_agent = AISentimentAgent(gemini_api_key=None)
+                 sentiment = ai_agent.get_market_sentiment() # Uses fallback
+
+            # AI Explanation
+            if settings and settings.gemini_api_key:
+                ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
+                prompt = (
+                    f"Current market status for {symbol}: "
+                    f"Price {last_row['close']}, RSI {last_row.get('RSI_14', 'N/A')}. "
+                    f"ML Model predicts {ml_prob*100:.1f}% chance of price increase. "
+                    f"News Sentiment is {sentiment}. "
+                    "Explain the recommended trading strategy and rationale in 2 sentences."
+                )
+                try:
+                    explanation = ai_agent.model.generate_content(prompt).text
+                except:
+                    explanation = "AI Explanation unavailable (API Error)."
+            else:
+                explanation = "Configure Gemini API Key in settings to get AI-generated strategy explanation."
+
+    except Exception as e:
+        print(f"Synopsis Error: {e}")
+        explanation = f"Error generating synopsis: {e}"
 
     return templates.TemplateResponse("synopsis.html", {
         "request": request,

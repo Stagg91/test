@@ -1,0 +1,20 @@
+INFO:     127.0.0.1:47924 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47924 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47924 - "GET /static/sw.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47924 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:47924 - "GET / HTTP/1.1" 200 OK
+Error fetching OHLCV: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:18:21).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&interval=60&limit=100&symbol=BTCUSDT.
+INFO:     127.0.0.1:47924 - "GET /api/chart_data?symbol=BTCUSDT HTTP/1.1" 200 OK
+Error fetching tickers: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:18:21).
+Request → GET https://api-testnet.bybit.com/v5/market/tickers: category=linear.
+INFO:     127.0.0.1:47930 - "GET /api/market_watch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47930 - "GET /strategies HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47930 - "GET /evolution HTTP/1.1" 200 OK
+Error fetching OHLCV: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:18:24).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&interval=60&limit=100&symbol=BTCUSDT.
+INFO:     127.0.0.1:47930 - "GET /synopsis HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9436]
