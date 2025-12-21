@@ -623,3 +623,25 @@ async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int 
     # Handle NaN
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
+
+@app.get("/lab", response_class=HTMLResponse)
+async def lab_page(request: Request, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    strategies = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.name).all()
+
+    # Get max generation
+    max_gen_strat = db.query(Strategy).order_by(Strategy.generation.desc()).first()
+    max_gen = max_gen_strat.generation if max_gen_strat else 0
+
+    # Get Best Performer
+    best_strat = db.query(BacktestResult, Strategy)\
+        .join(Strategy, BacktestResult.strategy_id == Strategy.id)\
+        .order_by(BacktestResult.roi.desc()).first()
+
+    return templates.TemplateResponse("lab.html", {
+        "request": request,
+        "settings": settings,
+        "strategies": strategies,
+        "max_gen": max_gen,
+        "best_strat": best_strat
+    })
