@@ -251,6 +251,7 @@ async def save_settings(
     paper_trading: bool = Form(False),
     paper_balance: float = Form(10000.0),
     is_active: bool = Form(False),
+    auto_evolve: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -265,13 +266,15 @@ async def save_settings(
     settings.paper_trading = paper_trading
     settings.paper_balance = paper_balance
     settings.is_active = is_active
+    settings.auto_evolve = auto_evolve
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
 
 @app.get("/backtest", response_class=HTMLResponse)
-async def backtest_page(request: Request):
-    return templates.TemplateResponse("backtest.html", {"request": request, "config": None})
+async def backtest_page(request: Request, db: Session = Depends(get_db)):
+    strategies = db.query(Strategy).all()
+    return templates.TemplateResponse("backtest.html", {"request": request, "config": None, "strategies": strategies})
 
 @app.post("/ai_backtest_config")
 async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Session = Depends(get_db)):
@@ -290,11 +293,14 @@ async def run_backtest(
     start_time: str = Form(None), # Optional YYYY-MM-DD
     end_time: str = Form(None),
     interval: str = Form("60"),
+    strategy_mode: str = Form("manual"), # manual or ai
+    strategy_id: int = Form(None),
     rsi_enabled: bool = Form(False),
     rsi_lower_start: int = Form(20),
     rsi_lower_stop: int = Form(40),
     rsi_lower_step: int = Form(5),
-    macd_enabled: bool = Form(False)
+    macd_enabled: bool = Form(False),
+    db: Session = Depends(get_db)
 ):
     de = DataEngine()
     # Convert dates to timestamp ms if provided
@@ -312,23 +318,50 @@ async def run_backtest(
 
     bt = Backtester(df, initial_balance=initial_balance)
 
-    param_grid = {}
+    if strategy_mode == "ai" and strategy_id:
+        # Run AI Strategy
+        strat = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+        if not strat:
+            return {"error": "Strategy not found"}
 
-    if rsi_enabled:
-        param_grid['rsi_enabled'] = [True]
-        param_grid['rsi_lower'] = list(range(rsi_lower_start, rsi_lower_stop, rsi_lower_step))
+        try:
+            local_scope = {}
+            exec(strat.code, {}, local_scope)
+            StrategyClass = local_scope.get(strat.class_name)
+            if not StrategyClass:
+                 return {"error": f"Class {strat.class_name} not found in code"}
+
+            instance = StrategyClass()
+            # Run single instance backtest (no grid search)
+            res = bt.run_strategy_instance(instance)
+
+            # Format as list of results for consistency
+            return [{
+                "params": {"name": strat.name},
+                "metrics": res
+            }]
+        except Exception as e:
+            return {"error": f"Strategy Execution Error: {e}"}
+
     else:
-        param_grid['rsi_enabled'] = [False]
+        # Manual Mode (Grid Search)
+        param_grid = {}
 
-    if macd_enabled:
-        param_grid['macd_enabled'] = [True]
-    else:
-        param_grid['macd_enabled'] = [False]
+        if rsi_enabled:
+            param_grid['rsi_enabled'] = [True]
+            param_grid['rsi_lower'] = list(range(rsi_lower_start, rsi_lower_stop, rsi_lower_step))
+        else:
+            param_grid['rsi_enabled'] = [False]
 
-    # Run Grid Search
-    results = bt.grid_search(combined_strategy, param_grid)
+        if macd_enabled:
+            param_grid['macd_enabled'] = [True]
+        else:
+            param_grid['macd_enabled'] = [False]
 
-    return results[0:10]
+        # Run Grid Search
+        results = bt.grid_search(combined_strategy, param_grid)
+
+        return results[0:10]
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
@@ -540,6 +573,13 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Synopsis Error: {e}")
         explanation = f"Error generating synopsis: {e}"
+        # Provide fallback data to prevent template crash
+        if not indicators:
+             indicators = {"Status": "Unavailable"}
+
+    except Exception as e:
+        print(f"Synopsis Error: {e}")
+        explanation = f"Error generating synopsis: {e}"
 
     return templates.TemplateResponse("synopsis.html", {
         "request": request,
@@ -560,7 +600,9 @@ async def train_ml():
     ml = MLEngine()
     score = ml.train_model(df)
 
-    return {"message": "Model retrained", "accuracy_score": score}
+    response = RedirectResponse("/synopsis", status_code=303)
+    response.set_cookie(key="flash_message", value=f"ML Model Retrained. Accuracy: {score:.2f}")
+    return response
 
 @app.post("/api/sync_data")
 async def sync_data():

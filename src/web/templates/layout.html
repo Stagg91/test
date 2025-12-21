@@ -49,12 +49,54 @@
   </div>
 </nav>
 
+<!-- Flash Messages Container -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index: 1055;"></div>
+
 <div class="container mt-4">
     {% block content %}{% endblock %}
 </div>
 
 <!-- Bootstrap JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+function showToast(message, type='info') {
+    const container = document.getElementById('toastContainer');
+    const id = 'toast_' + Date.now();
+    const html = `
+    <div id="${id}" class="toast align-items-center text-white bg-${type === 'error' ? 'danger' : 'success'} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+    `;
+    container.insertAdjacentHTML('beforeend', html);
+    const toastEl = document.getElementById(id);
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
+}
+
+// Check for cookie messages
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const msg = getCookie("flash_message");
+    if (msg) {
+        // Decode and show
+        showToast(decodeURIComponent(msg).replace(/\+/g, ' '));
+        // Delete cookie
+        document.cookie = "flash_message=; Max-Age=0; path=/";
+    }
+});
+</script>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>
