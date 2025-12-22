@@ -602,10 +602,6 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
         if not indicators:
              indicators = {"Status": "Unavailable"}
 
-    except Exception as e:
-        print(f"Synopsis Error: {e}")
-        explanation = f"Error generating synopsis: {e}"
-
     return templates.TemplateResponse("synopsis.html", {
         "request": request,
         "indicators": indicators,
