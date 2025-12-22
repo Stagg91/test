@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Request, Form, Depends, Response, Cookie
+from fastapi import FastAPI, Request, Form, Depends, Response, Cookie, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from src.logger import LabLogger
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -32,6 +33,11 @@ init_db()
 
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    import asyncio
+    LabLogger.set_loop(asyncio.get_running_loop())
+
 # Mount static files
 static_path = get_resource_path("src/web/static")
 templates_path = get_resource_path("src/web/templates")
@@ -39,6 +45,20 @@ templates_path = get_resource_path("src/web/templates")
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 templates = Jinja2Templates(directory=templates_path)
+
+@app.websocket("/ws/lab_log")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    LabLogger.add_client(websocket)
+    try:
+        # Send history
+        for msg in LabLogger.get_history():
+            await websocket.send_text(msg)
+
+        while True:
+            await websocket.receive_text() # Keep alive
+    except WebSocketDisconnect:
+        LabLogger.remove_client(websocket)
 
 def get_db():
     db = SessionLocal()
@@ -278,11 +298,13 @@ async def backtest_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/ai_backtest_config")
 async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Session = Depends(get_db)):
+    await LabLogger.log("API", f"Received ai_backtest_config with prompt: {prompt}")
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
 
     agent = AISentimentAgent(gemini_api_key=key)
     config = agent.interpret_strategy_prompt(prompt)
+    await LabLogger.log("API", f"Config generated: {config}")
 
     return templates.TemplateResponse("backtest.html", {"request": request, "config": config})
 
@@ -375,11 +397,14 @@ async def generate_strategies(
     count: int = Form(3),
     db: Session = Depends(get_db)
 ):
+    await LabLogger.log("API", f"Requesting Generation: {prompt} (Count: {count})")
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
 
     breeder = GeneticBreeder(gemini_api_key=key)
-    new_strats = breeder.create_generation_zero(prompt=prompt, count=count)
+    new_strats = await breeder.create_generation_zero(prompt=prompt, count=count)
+
+    await LabLogger.log("API", f"Generated {len(new_strats)} strategies.")
 
     return RedirectResponse("/strategies", status_code=303)
 

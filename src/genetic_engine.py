@@ -2,6 +2,7 @@ from src.database import SessionLocal, Strategy, BacktestResult
 from src.ai_sentiment import AISentimentAgent
 from src.backtester import Backtester
 from src.data_engine import DataEngine
+from src.logger import LabLogger
 import time
 import random
 import traceback
@@ -12,11 +13,11 @@ class GeneticBreeder:
         self.ai_agent = AISentimentAgent(gemini_api_key)
         self.db = SessionLocal()
 
-    def create_generation_zero(self, prompt="Create a robust profitable trend following strategy", count=3):
+    async def create_generation_zero(self, prompt="Create a robust profitable trend following strategy", count=3):
         """
         Creates the initial population of strategies.
         """
-        print(f"Creating Generation 0 with {count} strategies...")
+        await LabLogger.log("EVO", f"Creating Generation 0 with {count} strategies. Prompt: {prompt}")
         strategies = []
 
         # 1. Hardcoded Strategies
@@ -65,7 +66,13 @@ class GeneticBreeder:
         # 2. AI Generated Strategies
         for i in range(count):
             try:
-                result = self.ai_agent.generate_strategy_code(prompt + f" Variation {i+1}")
+                # Use blind exploration if no prompt provided or if requested
+                if not prompt or "experiment" in prompt.lower():
+                     full_prompt = "Invent a unique, experimental trading strategy. Be creative."
+                else:
+                     full_prompt = prompt + f" Variation {i+1}"
+
+                result = await self.ai_agent.generate_strategy_code(full_prompt)
                 code = result.get("code")
                 name = result.get("name", f"Gen0_AI_{i+1}")
 
@@ -79,8 +86,9 @@ class GeneticBreeder:
                         created_at=time.time()
                     )
                     strategies.append(s_ai)
+                    await LabLogger.log("DB", f"Saved Strategy: {name}")
             except Exception as e:
-                print(f"Gen0 Error: {e}")
+                await LabLogger.log("ERROR", f"Gen0 Error: {e}")
 
         # Save to DB
         for s in strategies:
@@ -88,12 +96,12 @@ class GeneticBreeder:
         self.db.commit()
         return strategies
 
-    def evaluate_population(self, generation=0, symbol="BTCUSDT"):
+    async def evaluate_population(self, generation=0, symbol="BTCUSDT"):
         """
         Runs backtests on all strategies of a specific generation.
         """
         strategies = self.db.query(Strategy).filter(Strategy.generation == generation).all()
-        print(f"Evaluating {len(strategies)} strategies for Gen {generation}...")
+        await LabLogger.log("EVO", f"Evaluating {len(strategies)} strategies for Gen {generation} on {symbol}...")
 
         de = DataEngine()
         # Fetch data once
@@ -145,13 +153,13 @@ class GeneticBreeder:
                 results.append((s, res))
 
             except Exception as e:
-                print(f"Error evaluating strategy {s.id}: {e}")
+                await LabLogger.log("ERROR", f"Error evaluating strategy {s.id}: {e}")
                 traceback.print_exc()
 
         self.db.commit()
         return results
 
-    def breed_next_generation(self, current_gen=0, top_n=2):
+    async def breed_next_generation(self, current_gen=0, top_n=2):
         """
         Selects top performers and mutates them to create next generation.
         """
@@ -162,11 +170,11 @@ class GeneticBreeder:
             .order_by(BacktestResult.roi.desc()).all()
 
         if not results:
-            print("No results to breed from.")
+            await LabLogger.log("EVO", "No results to breed from.")
             return
 
         top_performers = results[:top_n]
-        print(f"Breeding from top {len(top_performers)} strategies...")
+        await LabLogger.log("EVO", f"Breeding from top {len(top_performers)} strategies...")
 
         next_gen = current_gen + 1
 
@@ -190,7 +198,7 @@ class GeneticBreeder:
                     )
                     self.db.add(child)
                 except Exception as e:
-                    print(f"Mutation failed: {e}")
+                    await LabLogger.log("ERROR", f"Mutation failed: {e}")
 
         self.db.commit()
-        print(f"Generation {next_gen} created.")
+        await LabLogger.log("EVO", f"Generation {next_gen} created.")

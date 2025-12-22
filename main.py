@@ -8,6 +8,7 @@ from src.bybit_client import BybitClient
 from src.paper_trader import PaperTrader
 from src.risk_manager import RiskManager
 from src.notifications import NotificationManager
+from src.logger import LabLogger
 import traceback
 import sys
 import os
@@ -22,6 +23,11 @@ def evolution_loop():
     print("Evolution loop started...")
     from src.genetic_engine import GeneticBreeder
     from src.bybit_client import BybitClient
+    import asyncio
+
+    # Create event loop for async logging
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     while True:
         try:
@@ -33,57 +39,49 @@ def evolution_loop():
                 last_run = settings.last_evolution_time or 0.0
                 # Run every 4 hours = 14400 seconds
                 if now - last_run > 14400:
-                    print("Auto-Evolution Triggered.")
+                    loop.run_until_complete(LabLogger.log("EVO", "Auto-Evolution Triggered."))
                     # Update last run immediately
                     settings.last_evolution_time = now
                     db.commit()
 
                     breeder = GeneticBreeder(gemini_api_key=settings.gemini_api_key)
 
-                    # Fetch top symbols dynamically
-                    # We need a client to fetch symbols. Use generic public client if possible or just instance
-                    # We can use BybitClient without keys for public data usually, or use settings keys
+                    # Fetch top symbols
                     client = BybitClient(api_key=settings.api_key, api_secret=settings.api_secret, testnet=settings.testnet)
-                    resp = client.get_instruments()
+                    tickers = client.get_tickers()
                     symbols = []
-                    if resp and 'result' in resp and 'list' in resp['result']:
-                         # Filter top 10 USDT pairs by some criteria?
-                         # For now, let's just pick a diverse set or random set to avoid hitting limits
-                         # Or just top volume ones if we had volume data.
-                         # We'll take top 10 from the list which is usually sorted by symbol.
-                         # Better: Fetch tickers and sort by volume.
-                        tickers = client.get_tickers()
-                        if tickers and 'result' in tickers:
-                            sorted_tickers = sorted(tickers['result']['list'], key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
-                            symbols = [t['symbol'] for t in sorted_tickers if t['symbol'].endswith('USDT')][:10]
+                    if tickers and 'result' in tickers:
+                        sorted_tickers = sorted(tickers['result']['list'], key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+                        symbols = [t['symbol'] for t in sorted_tickers if t['symbol'].endswith('USDT')][:10]
 
                     if not symbols:
-                        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+                        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
-                    print(f"Evolving on symbols: {symbols}")
+                    loop.run_until_complete(LabLogger.log("EVO", f"Evolving on symbols: {symbols}"))
 
-                    # 1. Evaluate current generation on these symbols
-                    # This might be slow. We loop.
-                    # Note: GeneticBreeder.evaluate_population takes one symbol.
-                    # We should probably pick ONE random symbol from the top list to optimize for this cycle
-                    # OR update GeneticBreeder to handle multiple.
-                    # For simplicity: Pick top 1 (BTC) and one random altcoin
                     import random
                     target_symbol = random.choice(symbols)
 
                     # Run Evaluation
-                    print(f"Evaluating Gen {settings.last_evolution_time} on {target_symbol}...")
-                    breeder.evaluate_population(generation=0, symbol=target_symbol) # Simplified: Assume single generation tracking or we need to track max gen
+                    loop.run_until_complete(breeder.evaluate_population(generation=0, symbol=target_symbol))
 
-                    # We need to know the current max generation.
-                    # Query DB
+                    # Max Gen
                     max_gen_strat = db.query(Strategy).order_by(Strategy.generation.desc()).first()
                     current_gen = max_gen_strat.generation if max_gen_strat else 0
 
-                    breeder.evaluate_population(generation=current_gen, symbol=target_symbol)
-                    breeder.breed_next_generation(current_gen=current_gen)
+                    # Run Gen X
+                    if current_gen > 0:
+                        loop.run_until_complete(breeder.evaluate_population(generation=current_gen, symbol=target_symbol))
 
-                    print("Evolution cycle complete.")
+                    # Breed (Experimental/Wide Net)
+                    # We inject a "Blind Exploration" step here too:
+                    # Create 2 BRAND NEW strategies
+                    loop.run_until_complete(breeder.create_generation_zero(prompt="Invent a unique, experimental trading strategy", count=2))
+
+                    # And mutate best
+                    loop.run_until_complete(breeder.breed_next_generation(current_gen=current_gen))
+
+                    loop.run_until_complete(LabLogger.log("EVO", "Evolution cycle complete."))
 
             db.close()
         except Exception as e:

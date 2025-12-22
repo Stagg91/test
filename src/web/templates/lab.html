@@ -253,7 +253,28 @@
         c.scrollTop = c.scrollHeight;
     }
 
+    // Connect WebSocket
+    function connectWS() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/lab_log`;
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            logConsole("<span class='text-success'>Connected to Lab Stream.</span>");
+        };
+
+        ws.onmessage = (event) => {
+            logConsole(event.data);
+        };
+
+        ws.onclose = () => {
+            logConsole("<span class='text-warning'>Connection lost. Reconnecting...</span>");
+            setTimeout(connectWS, 2000);
+        };
+    }
+
     // Init
+    connectWS();
     updateMarketScan();
     setInterval(updateMarketScan, 10000);
 </script>
