@@ -225,7 +225,7 @@
     async function generateNewStrategy() {
         const prompt = prompt("Describe the new strategy idea (e.g., 'Bollinger Band breakout with RSI filter'):");
         if(prompt) {
-            logConsole(`Generating strategy: "${prompt}"...`);
+            logConsole(`Requesting AI generation for: "${prompt}"... (This may take 10-20s)`);
             const formData = new FormData();
             formData.append('prompt', prompt);
             formData.append('count', 1);
