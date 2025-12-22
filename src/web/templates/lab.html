@@ -1,0 +1,281 @@
+{% extends "layout.html" %}
+
+{% block title %}Strategy Lab - Staggs Hectic Trader{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <h1 class="text-gold"><i class="fa-solid fa-flask"></i> Strategy Lab</h1>
+        <p class="text-muted">Unified command center for Analysis, Simulation, and Evolution.</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Panel 1: Market Scan (The "Eye") -->
+    <div class="col-md-4 col-sm-12">
+        <div class="card h-100 border-gold shadow-sm">
+            <div class="card-header bg-dark text-gold">
+                <i class="fa-solid fa-radar"></i> Market Scan
+                <span class="badge bg-secondary float-end" id="scanStatus">Scanning...</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="marketScanList">
+                    <!-- Dynamic Items -->
+                    <div class="p-3 text-center text-muted">
+                        <div class="spinner-border spinner-border-sm" role="status"></div> Loading market data...
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <small class="text-muted">Top Volatile Pairs</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel 2: Simulation Workbench (The "Brain") -->
+    <div class="col-md-5 col-sm-12">
+        <div class="card h-100 border-info shadow-sm">
+            <div class="card-header bg-dark text-info">
+                <i class="fa-solid fa-microchip"></i> Strategy Workbench
+            </div>
+            <div class="card-body">
+                <!-- Quick Backtest Form -->
+                <form id="labBacktestForm" class="mb-3">
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="labStrategySelect">
+                            <option value="" selected disabled>Select Strategy...</option>
+                            {% for s in strategies %}
+                            <option value="{{ s.id }}">{{ s.name }} (Gen {{ s.generation }})</option>
+                            {% endfor %}
+                        </select>
+                        <select class="form-select" id="labSymbolSelect" style="max-width: 120px;">
+                            <option value="BTCUSDT">BTC</option>
+                            <option value="ETHUSDT">ETH</option>
+                            <option value="SOLUSDT">SOL</option>
+                        </select>
+                        <button class="btn btn-info" type="button" onclick="runLabBacktest()">
+                            <i class="fa-solid fa-play"></i> Test
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Results Display -->
+                <div id="labBacktestResult" class="border rounded p-3 bg-black" style="min-height: 200px; max-height: 400px; overflow-y: auto; font-family: monospace;">
+                    <span class="text-muted">> Select a strategy and click Test to simulate.</span>
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between">
+                <button class="btn btn-sm btn-outline-light" onclick="generateNewStrategy()">
+                    <i class="fa-solid fa-plus"></i> New AI Idea
+                </button>
+                <small class="text-muted">Simulates last 1000 candles</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel 3: Evolution Optimizer (The "Engine") -->
+    <div class="col-md-3 col-sm-12">
+        <div class="card h-100 border-success shadow-sm">
+            <div class="card-header bg-dark text-success">
+                <i class="fa-solid fa-dna"></i> Evolution Engine
+            </div>
+            <div class="card-body text-center">
+                <h5 class="card-title">Generation {{ max_gen }}</h5>
+                <p class="card-text small text-muted">Continuous optimization is {% if settings.auto_evolve %}<span class="text-success">ON</span>{% else %}<span class="text-danger">OFF</span>{% endif %}.</p>
+
+                <hr>
+                <div class="text-start">
+                    <h6>Best Performer</h6>
+                    <div id="bestPerformerStats">
+                        {% if best_strat %}
+                        <strong>{{ best_strat.Strategy.name }}</strong><br>
+                        ROI: <span class="text-success">{{ "%.2f"|format(best_strat.BacktestResult.roi) }}%</span><br>
+                        Win Rate: {{ "%.1f"|format(best_strat.BacktestResult.win_rate) }}%
+                        {% else %}
+                        <span class="text-muted">No data yet.</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <form action="/settings" method="post" class="d-grid">
+                    <input type="hidden" name="auto_evolve" value="{% if settings.auto_evolve %}false{% else %}true{% endif %}">
+                    <!-- Need to preserve other settings? Ideally this is an AJAX toggle but simple form for now -->
+                     <!-- Actually, linking to settings is safer or using a specific toggle route -->
+                    <a href="/settings" class="btn btn-sm btn-outline-secondary">Configure Engine</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log / Console -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark text-white">
+            <div class="card-header border-secondary">
+                <i class="fa-solid fa-terminal"></i> Lab Console
+            </div>
+            <div class="card-body font-monospace p-2" id="labConsole" style="height: 150px; overflow-y: auto; font-size: 0.9em; color: #0f0;">
+                > System initialized.<br>
+                > Waiting for instructions...
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 1. Market Scan Polling
+    async function updateMarketScan() {
+        try {
+            const res = await fetch('/api/market_watch'); // Reusing existing endpoint
+            const data = await res.json();
+
+            const list = document.getElementById('marketScanList');
+            if(data.length === 0) return;
+
+            let html = '';
+            // Show top 5 movers
+            data.slice(0, 5).forEach(item => {
+                const change = parseFloat(item.change);
+                const color = change >= 0 ? 'text-success' : 'text-danger';
+                const icon = change >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                html += `
+                <div class="list-group-item d-flex justify-content-between align-items-center bg-transparent text-light">
+                    <div>
+                        <strong>${item.symbol}</strong><br>
+                        <small class="text-muted">$${item.price}</small>
+                    </div>
+                    <span class="${color}"><i class="fa-solid ${icon}"></i> ${item.change}%</span>
+                </div>
+                `;
+            });
+            list.innerHTML = html;
+        } catch(e) {
+            console.error(e);
+        }
+    }
+
+    // 2. Run Lab Backtest
+    async function runLabBacktest() {
+        const stratId = document.getElementById('labStrategySelect').value;
+        const symbol = document.getElementById('labSymbolSelect').value;
+
+        if(!stratId) {
+            logConsole("Error: Please select a strategy.");
+            return;
+        }
+
+        logConsole(`Starting backtest for Strategy ID ${stratId} on ${symbol}...`);
+        const resultDiv = document.getElementById('labBacktestResult');
+        resultDiv.innerHTML = '<div class="text-center text-info"><div class="spinner-border" role="status"></div> Running simulation...</div>';
+
+        try {
+            const formData = new FormData();
+            formData.append('symbol', symbol);
+            formData.append('strategy_mode', 'ai');
+            formData.append('strategy_id', stratId);
+            formData.append('interval', '60');
+            formData.append('initial_balance', '10000');
+
+            const res = await fetch('/run_backtest', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+
+            if(data.error) {
+                resultDiv.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
+                logConsole(`Error: ${data.error}`);
+            } else if (data.length > 0) {
+                const metrics = data[0].metrics;
+                const pnlClass = metrics.total_pnl_abs >= 0 ? 'text-success' : 'text-danger';
+
+                resultDiv.innerHTML = `
+                    <h5 class="${pnlClass}">PnL: $${metrics.total_pnl_abs.toFixed(2)} (${metrics.roi_percent.toFixed(2)}%)</h5>
+                    <p>
+                    Trades: ${metrics.num_trades}<br>
+                    Win Rate: ${(metrics.win_rate * 100).toFixed(1)}%<br>
+                    Max DD: ${metrics.max_drawdown ? metrics.max_drawdown.toFixed(2) : 0}%
+                    </p>
+                    <hr>
+                    <small class="text-muted">Last 5 Trades:</small>
+                    <ul class="list-unstyled small">
+                        ${metrics.trades ? metrics.trades.slice(-5).reverse().map(t =>
+                            `<li>${t.timestamp ? new Date(t.timestamp).toLocaleDateString() : ''}: <span class="${t.pnl >= 0 ? 'text-success' : 'text-danger'}">${t.pnl.toFixed(2)}%</span></li>`
+                        ).join('') : 'No trades'}
+                    </ul>
+                `;
+                logConsole(`Backtest Complete. ROI: ${metrics.roi_percent.toFixed(2)}%`);
+            } else {
+                 resultDiv.innerHTML = "No results returned.";
+            }
+
+        } catch(e) {
+            resultDiv.innerHTML = `<span class="text-danger">System Error: ${e.message}</span>`;
+            logConsole(`System Error: ${e.message}`);
+        }
+    }
+
+    // 3. New Idea Generator
+    async function generateNewStrategy() {
+        const prompt = prompt("Describe the new strategy idea (e.g., 'Bollinger Band breakout with RSI filter'):");
+        if(prompt) {
+            logConsole(`Requesting AI generation for: "${prompt}"... (This may take 10-20s)`);
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            formData.append('count', 1);
+
+            try {
+                // We use the existing generate route but maybe need an API version that returns JSON instead of redirect?
+                // The existing route redirects. We can just submit it and let it reload, or fetch it.
+                // Since existing route redirects to /strategies, let's just use fetch and ignore redirect content,
+                // assuming it works.
+                await fetch('/strategies/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+                logConsole("Strategy generated! Refreshing list...");
+                setTimeout(() => location.reload(), 2000);
+            } catch(e) {
+                logConsole(`Generation Error: ${e}`);
+            }
+        }
+    }
+
+    function logConsole(msg) {
+        const c = document.getElementById('labConsole');
+        c.innerHTML += `> ${msg}<br>`;
+        c.scrollTop = c.scrollHeight;
+    }
+
+    // Connect WebSocket
+    function connectWS() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/lab_log`;
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            logConsole("<span class='text-success'>Connected to Lab Stream.</span>");
+        };
+
+        ws.onmessage = (event) => {
+            logConsole(event.data);
+        };
+
+        ws.onclose = () => {
+            logConsole("<span class='text-warning'>Connection lost. Reconnecting...</span>");
+            setTimeout(connectWS, 2000);
+        };
+    }
+
+    // Init
+    connectWS();
+    updateMarketScan();
+    setInterval(updateMarketScan, 10000);
+</script>
+{% endblock %}

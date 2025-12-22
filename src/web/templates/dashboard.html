@@ -161,7 +161,8 @@
                 return;
             }
 
-            const dates = data.map(r => r.datetime);
+            // Fallback for missing datetime (use startTime ms)
+            const dates = data.map(r => r.datetime ? r.datetime : new Date(parseInt(r.startTime)));
             const open = data.map(r => r.open);
             const high = data.map(r => r.high);
             const low = data.map(r => r.low);
