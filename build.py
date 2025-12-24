@@ -27,6 +27,9 @@ args = [
 
     "--icon=app_icon.ico",
 
+    # Collect all google.genai data and modules
+    "--collect-all=google.genai",
+
     # Hidden imports often missed by analysis
     "--hidden-import=uvicorn.logging",
     "--hidden-import=uvicorn.loops",
@@ -49,8 +52,6 @@ args = [
     "--hidden-import=pystray.backends.win32",
     "--hidden-import=pystray.backends.xorg",
     "--hidden-import=pystray.backends.gtk",
-    # Explicitly add google.genai just in case
-    "--hidden-import=google.genai",
 
     "--clean",
 ]
