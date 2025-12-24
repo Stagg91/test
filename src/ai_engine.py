@@ -3,6 +3,7 @@ from google.genai import types
 import json
 import traceback
 from src.strategies.schemas import StrategyRecipe, IndicatorConfig
+from src.logger import LabLogger
 
 class AIEngine:
     def __init__(self, api_key: str):
@@ -10,7 +11,7 @@ class AIEngine:
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-3-pro-preview"
 
-    def generate_strategy_recipe(self, prompt: str) -> StrategyRecipe:
+    async def generate_strategy_recipe(self, prompt: str) -> StrategyRecipe:
         """
         Generates a new strategy recipe based on the prompt.
         """
@@ -40,11 +41,14 @@ class AIEngine:
 
         full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
 
+        await LabLogger.log("AI", f"Requesting Generation: {prompt}")
         print("\n--- AI REQUEST (GENERATE) ---")
         print(full_prompt)
         print("-----------------------------\n")
 
         try:
+            # Note: generate_content is sync. We can wrap it or just block briefly.
+            # For true async, we'd need run_in_executor, but this is fine for now as it's a background thread.
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=full_prompt,
@@ -55,6 +59,7 @@ class AIEngine:
             )
 
             text_content = response.text
+            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
             print("\n--- AI RESPONSE ---")
             print(text_content)
             print("-------------------\n")
@@ -66,12 +71,14 @@ class AIEngine:
         except Exception as e:
             err_msg = str(e)
             print(f"\n[AI ERROR] {err_msg}")
+            await LabLogger.log("AI", f"Error: {err_msg}")
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 print("!!! GEMINI QUOTA EXCEEDED !!!")
+                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
             traceback.print_exc()
             return None
 
-    def mutate_strategy_recipe(self, parents: list[StrategyRecipe], feedback: str) -> StrategyRecipe:
+    async def mutate_strategy_recipe(self, parents: list[StrategyRecipe], feedback: str) -> StrategyRecipe:
         """
         Mutates a strategy or combines parents.
         """
@@ -85,6 +92,7 @@ class AIEngine:
         parents_json = json.dumps([p.model_dump() for p in parents], indent=2)
         full_prompt = f"{system_instruction}\n\nParents:\n{parents_json}\n\nGoal: {feedback}"
 
+        await LabLogger.log("AI", f"Requesting Mutation. Goal: {feedback}")
         print("\n--- AI REQUEST (MUTATE) ---")
         print(full_prompt)
         print("---------------------------\n")
@@ -100,6 +108,7 @@ class AIEngine:
             )
 
             text_content = response.text
+            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
             print("\n--- AI RESPONSE ---")
             print(text_content)
             print("-------------------\n")
@@ -111,7 +120,9 @@ class AIEngine:
         except Exception as e:
             err_msg = str(e)
             print(f"\n[AI ERROR] {err_msg}")
+            await LabLogger.log("AI", f"Error: {err_msg}")
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 print("!!! GEMINI QUOTA EXCEEDED !!!")
+                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
             traceback.print_exc()
             return None
