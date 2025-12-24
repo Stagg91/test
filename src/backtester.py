@@ -3,6 +3,7 @@ import numpy as np
 import traceback
 from src.strategy_parser import StrategyParser
 from src.strategies.schemas import StrategyRecipe
+from src.logger import LabLogger
 
 class Backtester:
     def __init__(self, data: pd.DataFrame, initial_balance: float = 10000.0):
@@ -10,7 +11,7 @@ class Backtester:
         self.initial_balance = initial_balance
         self.parser = StrategyParser()
 
-    def run_vectorized_backtest(self, strategy: StrategyRecipe) -> dict:
+    def run_vectorized_backtest(self, strategy: StrategyRecipe, verbose: bool = False) -> dict:
         """
         Runs a vectorized backtest on the strategy.
         """
@@ -64,6 +65,50 @@ class Backtester:
             dd_abs = abs(max_drawdown)
             if dd_abs < 0.001: dd_abs = 0.001
             fitness = total_return / dd_abs
+
+            # Verbose Logging (Tick-by-tick simulation style output)
+            if verbose:
+                import asyncio
+                # Helper to print safely
+                async def log(msg):
+                    await LabLogger.log("BACKTEST", msg)
+
+                # We can't really await here easily because run_vectorized is sync.
+                # But LabLogger.log is async.
+                # We can use asyncio.run or create_task if we are in a loop.
+                # However, Backtester is called from async route.
+                # It would be better if Backtester was async or we fire-and-forget logs.
+
+                # For now, we print to console and try to schedule log task if loop exists.
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(log(f"--- Backtest Start: {df.iloc[0]['startTime']} ---"))
+
+                    # Log every row (Warning: high volume)
+                    # Limit to first 50 and last 50 for sanity unless requested "every tick"
+                    # User asked for "every tick". We'll do it.
+                    # But streaming 1000 logs via WS might lag.
+
+                    for idx, row in df.iterrows():
+                        # Determine signal text
+                        sig = ""
+                        if row['signal'] == 1: sig = "BUY SIGNAL"
+                        elif row['signal'] == -1: sig = "SELL SIGNAL"
+
+                        # Indicators to show
+                        # Filter for columns that look like indicators (Uppercase + Numbers)
+                        # or just show everything except basic OHLCV
+                        ignore = ['open', 'high', 'low', 'close', 'volume', 'startTime', 'turnover', 'pct_change', 'strategy_return', 'position', 'trade_id', 'signal', 'equity']
+                        inds = [f"{k}={v:.4f}" for k,v in row.items() if k not in ignore and isinstance(v, (int, float))]
+
+                        msg = f"[{row['startTime']}] Close: {row['close']:.2f} | Bal: {row['equity']:.2f} | {', '.join(inds)} {sig}"
+                        loop.create_task(log(msg))
+
+                    loop.create_task(log(f"--- Backtest End: {df.iloc[-1]['startTime']} ---"))
+                    loop.create_task(log(f"Final Balance: {df['equity'].iloc[-1]:.2f} (PnL: {total_return:.2f}%)"))
+                except RuntimeError:
+                    # No loop running (e.g. running in script)
+                    print("Verbose logging requires running event loop.")
 
             return {
                 "roi_percent": total_return,

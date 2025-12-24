@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 import pandas as pd
 import json
 import numpy as np
+import traceback
+import logging
+import sys
+import os
 
 from src.database import SessionLocal, engine, Settings, init_db, User, Strategy, BacktestResult
 from src.bybit_client import BybitClient
@@ -28,8 +32,12 @@ from src.utils import get_resource_path
 import qrcode
 import io
 import base64
+import time
 from src.visualization import ChartGenerator
 from src.strategies.schemas import StrategyRecipe
+
+# Ensure src is in path for legacy strategies
+sys.path.append(os.getcwd())
 
 # Init DB
 init_db()
@@ -121,9 +129,6 @@ async def logout():
 @app.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request):
     return templates.TemplateResponse("setup.html", {"request": request})
-
-import traceback
-import logging
 
 @app.post("/setup")
 async def setup(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
@@ -353,12 +358,10 @@ async def run_backtest(
             # Check if JSON Strategy
             if strat.content_json:
                  recipe = StrategyRecipe(**strat.content_json)
-                 res = bt.run_vectorized_backtest(recipe)
-                 # Add chart data to result
-                 # Re-run parser to get DF with signals/indicators for chart
-                 # Optimization: Backtester could return DF?
-                 # Currently returns dict.
-                 # Let's reconstruct chart data
+                 # Enable Verbose logging for manual backtest runs in Lab
+                 res = bt.run_vectorized_backtest(recipe, verbose=True)
+
+                 # Reconstruct chart data for frontend
                  from src.strategy_parser import StrategyParser
                  parser = StrategyParser()
                  df_res = parser.parse_and_execute(df, recipe)
@@ -368,12 +371,18 @@ async def run_backtest(
                      indicators=[ind.col_name or ind.name for ind in recipe.indicators]
                  )
 
-                 # Sanitize NaN for JSON
-                 # Helper to replace NaN
+                 # Sanitize for JSON (Recursively handle NaN/Inf and Numpy types)
                  def sanitize(obj):
+                     if isinstance(obj, (np.integer, np.int64, np.int32)):
+                         return int(obj)
+                     if isinstance(obj, (np.floating, np.float64, np.float32)):
+                         if np.isnan(obj) or np.isinf(obj):
+                             return 0.0
+                         return float(obj)
                      if isinstance(obj, float):
                          if np.isnan(obj) or np.isinf(obj):
                              return 0.0
+                         return obj
                      if isinstance(obj, dict):
                          return {k: sanitize(v) for k, v in obj.items()}
                      if isinstance(obj, list):
@@ -391,18 +400,30 @@ async def run_backtest(
 
             else:
                 # Legacy Code Exec
-                local_scope = {}
-                exec(strat.code, {}, local_scope)
-                StrategyClass = local_scope.get(strat.class_name)
-                if not StrategyClass:
-                    return {"error": f"Class {strat.class_name} not found in code"}
+                try:
+                    local_scope = {}
+                    exec(strat.code, {}, local_scope)
+                    StrategyClass = local_scope.get(strat.class_name)
+                    if not StrategyClass:
+                        return {"error": f"Class {strat.class_name} not found in code"}
 
-                instance = StrategyClass()
-                res = bt.run_strategy_instance(instance)
-                return [{
-                    "params": {"name": strat.name},
-                    "metrics": res
-                }]
+                    instance = StrategyClass()
+                    res = bt.run_strategy_instance(instance)
+
+                    # Sanitize legacy results too
+                    def sanitize_legacy(obj):
+                         if isinstance(obj, (np.integer, np.int64, int)): return int(obj)
+                         if isinstance(obj, (np.floating, np.float64, float)): return float(obj)
+                         if isinstance(obj, dict): return {k: sanitize_legacy(v) for k,v in obj.items()}
+                         return obj
+
+                    return [{
+                        "params": {"name": strat.name},
+                        "metrics": sanitize_legacy(res)
+                    }]
+                except Exception as e:
+                    return {"error": f"Legacy Strategy Error: {e}"}
+
         except Exception as e:
             traceback.print_exc()
             return {"error": f"Strategy Execution Error: {e}"}
@@ -449,6 +470,46 @@ async def generate_strategies(
     await LabLogger.log("API", f"Generated {len(new_strats)} strategies.")
 
     return RedirectResponse("/strategies", status_code=303)
+
+@app.post("/strategies/delete/{strat_id}")
+async def delete_strategy(strat_id: int, db: Session = Depends(get_db)):
+    strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+    if strat:
+        db.delete(strat)
+        db.commit()
+    return RedirectResponse("/strategies", status_code=303)
+
+@app.get("/strategies/get/{strat_id}")
+async def get_strategy_json(strat_id: int, db: Session = Depends(get_db)):
+    strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+    if strat:
+        return {
+            "id": strat.id,
+            "name": strat.name,
+            "content_json": strat.content_json,
+            "code": strat.code # Legacy fallback
+        }
+    return JSONResponse({"error": "Strategy not found"}, status_code=404)
+
+@app.post("/strategies/update/{strat_id}")
+async def update_strategy(strat_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+        strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
+        if strat:
+            strat.content_json = data.get('content_json')
+            strat.name = data.get('name', strat.name)
+            # Validate recipe
+            try:
+                StrategyRecipe(**strat.content_json)
+            except Exception as e:
+                return JSONResponse({"error": f"Invalid Recipe: {e}"}, status_code=400)
+
+            db.commit()
+            return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return JSONResponse({"error": "Strategy not found"}, status_code=404)
 
 @app.post("/strategies/activate/{strat_id}")
 async def activate_strategy(strat_id: int, db: Session = Depends(get_db)):
@@ -572,7 +633,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              recipe = StrategyRecipe(**strat.content_json)
              from src.backtester import Backtester
              bt = Backtester(df, initial_balance=10000)
-             res = bt.run_vectorized_backtest(recipe)
+             res = bt.run_vectorized_backtest(recipe, verbose=True)
 
              # Save result
              br = BacktestResult(
@@ -585,7 +646,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
                 max_drawdown=res['max_drawdown'],
                 win_rate=res['win_rate'],
                 trades_count=res['total_trades'],
-                metrics_json=json.dumps(res),
+                metrics_json=json.dumps(res, default=lambda x: x.item() if hasattr(x, 'item') else x),
                 timestamp=time.time()
              )
              db.add(br)
@@ -615,7 +676,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
                 max_drawdown=test_res['max_drawdown'],
                 win_rate=test_res['win_rate'] * 100,
                 trades_count=test_res['total_trades'],
-                metrics_json=json.dumps(res),
+                metrics_json=json.dumps(res, default=lambda x: x.item() if hasattr(x, 'item') else x),
                 timestamp=time.time()
             )
             db.add(br)

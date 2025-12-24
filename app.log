@@ -1,0 +1,16 @@
+INFO:     Started server process [73039]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59332 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59332 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59332 - "GET /static/sw.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59332 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:59332 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59332 - "GET /strategies HTTP/1.1" 200 OK
+[12:03:36] [API] Requesting Generation: Test Strategy (Count: 1)
+[12:03:36] [EVO] No API Key for Gen0.
+[12:03:36] [API] Generated 0 strategies.
+INFO:     127.0.0.1:59332 - "POST /strategies/generate HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:59332 - "GET /strategies HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59332 - "GET /strategies HTTP/1.1" 200 OK
