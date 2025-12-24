@@ -44,6 +44,16 @@
         </div>
     </div>
 
+    <!-- Strategy Visualization (Price + Indicators) -->
+    {% if chart_json %}
+    <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-chart-line"></i> Strategy Visualization</div>
+        <div class="card-body">
+            <div id="strategyChart" style="width:100%;height:600px;"></div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Equity Curve -->
     <div class="card mb-4">
         <div class="card-header"><i class="fa-solid fa-chart-area"></i> Equity Curve</div>
@@ -122,5 +132,11 @@
     };
 
     Plotly.newPlot('equityChart', [trace1], layout);
+
+    // Strategy Chart
+    {% if chart_json %}
+        var chartData = {{ chart_json|tojson }};
+        Plotly.newPlot('strategyChart', chartData.data, chartData.layout);
+    {% endif %}
 </script>
 {% endblock %}

@@ -27,6 +27,8 @@ from src.utils import get_resource_path
 import qrcode
 import io
 import base64
+from src.visualization import ChartGenerator
+from src.strategies.schemas import StrategyRecipe
 
 # Init DB
 init_db()
@@ -347,21 +349,45 @@ async def run_backtest(
             return {"error": "Strategy not found"}
 
         try:
-            local_scope = {}
-            exec(strat.code, {}, local_scope)
-            StrategyClass = local_scope.get(strat.class_name)
-            if not StrategyClass:
-                 return {"error": f"Class {strat.class_name} not found in code"}
+            # Check if JSON Strategy
+            if strat.content_json:
+                 recipe = StrategyRecipe(**strat.content_json)
+                 res = bt.run_vectorized_backtest(recipe)
+                 # Add chart data to result
+                 # Re-run parser to get DF with signals/indicators for chart
+                 # Optimization: Backtester could return DF?
+                 # Currently returns dict.
+                 # Let's reconstruct chart data
+                 from src.strategy_parser import StrategyParser
+                 parser = StrategyParser()
+                 df_res = parser.parse_and_execute(df, recipe)
 
-            instance = StrategyClass()
-            # Run single instance backtest (no grid search)
-            res = bt.run_strategy_instance(instance)
+                 chart_json = ChartGenerator.generate_chart_json(
+                     df_res,
+                     indicators=[ind.col_name or ind.name for ind in recipe.indicators]
+                 )
 
-            # Format as list of results for consistency
-            return [{
-                "params": {"name": strat.name},
-                "metrics": res
-            }]
+                 # Inject chart into response
+                 return [{
+                    "params": {"name": strat.name},
+                    "metrics": res,
+                    "chart_json": chart_json
+                }]
+
+            else:
+                # Legacy Code Exec
+                local_scope = {}
+                exec(strat.code, {}, local_scope)
+                StrategyClass = local_scope.get(strat.class_name)
+                if not StrategyClass:
+                    return {"error": f"Class {strat.class_name} not found in code"}
+
+                instance = StrategyClass()
+                res = bt.run_strategy_instance(instance)
+                return [{
+                    "params": {"name": strat.name},
+                    "metrics": res
+                }]
         except Exception as e:
             return {"error": f"Strategy Execution Error: {e}"}
 
@@ -459,6 +485,7 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         return RedirectResponse("/evolution")
 
     import json
+    chart_json = None
     try:
         metrics = json.loads(res.metrics_json)
         # Handle if metrics are nested under 'test' (walk-forward) or flat (legacy/run_strategy_instance)
@@ -469,7 +496,37 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
 
         trades = details.get('trades', [])
         equity_curve = details.get('equity_curve', [])
-    except:
+
+        # Generate Chart if Strategy is JSON type
+        strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
+        if strat and strat.content_json:
+             # Need to re-run to get signals for chart?
+             # Or we could have stored chart_json in metrics? Storing full chart is heavy.
+             # Better to re-run on demand if data matches?
+             # But fetching data exactly as backtest is tricky if date range not saved precisely in DB
+             # DB has start/end date string.
+
+             # Re-fetch data
+             de = DataEngine()
+             ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
+             ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
+
+             # Fetch a bit more context? Or exact.
+             df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
+
+             if not df.empty:
+                 from src.strategy_parser import StrategyParser
+                 parser = StrategyParser()
+                 recipe = StrategyRecipe(**strat.content_json)
+                 df_res = parser.parse_and_execute(df, recipe)
+
+                 chart_json = ChartGenerator.generate_chart_json(
+                     df_res,
+                     indicators=[ind.col_name or ind.name for ind in recipe.indicators]
+                 )
+
+    except Exception as e:
+        print(f"Error loading result details: {e}")
         trades = []
         equity_curve = []
 
@@ -477,7 +534,8 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         "request": request,
         "result": res,
         "trades": trades,
-        "equity_curve": equity_curve
+        "equity_curve": equity_curve,
+        "chart_json": chart_json # Pass to template
     })
 
 @app.post("/strategies/backtest/{strat_id}")
@@ -493,42 +551,65 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
     df = de.fetch_ohlcv("BTCUSDT", interval="60", limit=1000)
 
     try:
-        local_scope = {}
-        exec(strat.code, {}, local_scope)
-        StrategyClass = local_scope.get(strat.class_name)
-        if not StrategyClass:
-            return RedirectResponse("/strategies", status_code=303)
+        # Check type
+        if strat.content_json:
+             recipe = StrategyRecipe(**strat.content_json)
+             from src.backtester import Backtester
+             bt = Backtester(df, initial_balance=10000)
+             res = bt.run_vectorized_backtest(recipe)
 
-        instance = StrategyClass()
-        from src.backtester import Backtester
-        bt = Backtester(df, initial_balance=10000)
+             # Save result
+             br = BacktestResult(
+                strategy_id=strat.id,
+                symbol="BTCUSDT",
+                start_date=str(df.iloc[0]['startTime']),
+                end_date=str(df.iloc[-1]['startTime']),
+                roi=res['roi_percent'],
+                sharpe=res['sharpe'],
+                max_drawdown=res['max_drawdown'],
+                win_rate=res['win_rate'],
+                trades_count=res['total_trades'],
+                metrics_json=json.dumps(res),
+                timestamp=time.time()
+             )
+             db.add(br)
+             db.commit()
+             return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
 
-        # We run walk forward validation to be consistent
-        res = bt.walk_forward_validation(instance)
+        else:
+            # Legacy
+            local_scope = {}
+            exec(strat.code, {}, local_scope)
+            StrategyClass = local_scope.get(strat.class_name)
+            if not StrategyClass:
+                return RedirectResponse("/strategies", status_code=303)
 
-        # Save result
-        test_res = res['test']
-        br = BacktestResult(
-            strategy_id=strat.id,
-            symbol="BTCUSDT",
-            start_date=str(df.iloc[0]['startTime']),
-            end_date=str(df.iloc[-1]['startTime']),
-            roi=test_res['roi_percent'],
-            sharpe=test_res['sharpe'],
-            max_drawdown=test_res['max_drawdown'],
-            win_rate=test_res['win_rate'] * 100,
-            trades_count=test_res['total_trades'],
-            metrics_json=json.dumps(res),
-            timestamp=time.time()
-        )
-        db.add(br)
-        db.commit()
+            instance = StrategyClass()
+            from src.backtester import Backtester
+            bt = Backtester(df, initial_balance=10000)
+            res = bt.walk_forward_validation(instance)
+            test_res = res['test']
+            br = BacktestResult(
+                strategy_id=strat.id,
+                symbol="BTCUSDT",
+                start_date=str(df.iloc[0]['startTime']),
+                end_date=str(df.iloc[-1]['startTime']),
+                roi=test_res['roi_percent'],
+                sharpe=test_res['sharpe'],
+                max_drawdown=test_res['max_drawdown'],
+                win_rate=test_res['win_rate'] * 100,
+                trades_count=test_res['total_trades'],
+                metrics_json=json.dumps(res),
+                timestamp=time.time()
+            )
+            db.add(br)
+            db.commit()
 
-        # Redirect to result page
-        return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
+            return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
 
     except Exception as e:
         print(f"Quick Backtest Error: {e}")
+        traceback.print_exc()
         return RedirectResponse("/strategies", status_code=303)
 
 @app.get("/synopsis", response_class=HTMLResponse)

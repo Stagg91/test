@@ -142,7 +142,7 @@ class BybitClient:
 
     def fetch_full_history(self, symbol: str, interval: str, start_time: int = None, end_time: int = None, limit: int = 200):
         """
-        Fetches historical kline data.
+        Fetches historical kline data using V5 API.
         """
         try:
             params = {
@@ -157,6 +157,7 @@ class BybitClient:
                 params["end"] = end_time
 
             response = self.session.get_kline(**params)
+            # Result list: [startTime, open, high, low, close, volume, turnover]
             return response.get('result', {}).get('list', [])
         except Exception as e:
             print(f"Error fetching history for {symbol}: {e}")
