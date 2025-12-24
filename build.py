@@ -26,7 +26,8 @@ args = [
     f"--add-data=app_icon.png{os.pathsep}.",  # Add icon to root of bundle for pywebview
 
     "--icon=app_icon.ico",
-    "--splash=splash.png",
+    # Splash screen removed
+    # "--splash=splash.png",
 
     # Hidden imports often missed by analysis
     "--hidden-import=uvicorn.logging",
