@@ -35,6 +35,7 @@ class Strategy(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     code = Column(String)  # Python source code
+    content_json = Column(JSON, nullable=True) # Strategy Recipe
     class_name = Column(String) # Class name to instantiate
     type = Column(String, default="manual") # manual, ai_gen, evolved
     generation = Column(Integer, default=0)
@@ -104,6 +105,16 @@ def init_db():
             with engine.connect() as conn:
                 conn.execute(text("DROP TABLE strategies"))
                 conn.commit()
+
+        # Check for content_json
+        if "content_json" not in columns:
+             print("Migrating strategies table: adding content_json...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE strategies ADD COLUMN content_json JSON"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"Migration Error: {e}")
 
     # Check settings schema
     if inspector.has_table("settings"):

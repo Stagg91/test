@@ -1,7 +1,6 @@
 import pandas as pd
 import os
 import glob
-
 import sys
 
 class DataWarehouse:
@@ -9,22 +8,19 @@ class DataWarehouse:
         if base_dir:
             self.base_dir = base_dir
         else:
-            # Use user directory to ensure write permissions
-            app_name = "StaggsHecticTrader"
-            if sys.platform == "win32":
-                app_data = os.getenv("APPDATA")
-                path = os.path.join(app_data, app_name)
-            else:
-                path = os.path.join(os.path.expanduser("~"), "." + app_name.lower())
-
-            self.base_dir = os.path.join(path, "data_warehouse")
+            # Default to "data" in the current working directory as requested
+            self.base_dir = os.path.join(os.getcwd(), "data")
 
         os.makedirs(self.base_dir, exist_ok=True)
 
     def _get_path(self, symbol, interval):
-        symbol_dir = os.path.join(self.base_dir, symbol)
-        os.makedirs(symbol_dir, exist_ok=True)
-        return os.path.join(symbol_dir, f"{interval}.parquet")
+        # Flatten structure? The prompt said "Save historical data in a data/ folder".
+        # A flat structure like data/BTCUSDT_60.parquet is cleaner than data/BTCUSDT/60.parquet for simple browsing,
+        # but let's stick to existing if we want, or simplify.
+        # User requested: "Save historical data in a data/ folder as Parquet or CSV"
+        # Let's use data/{symbol}_{interval}.parquet
+        filename = f"{symbol}_{interval}.parquet"
+        return os.path.join(self.base_dir, filename)
 
     def save_data(self, symbol: str, interval: str, df: pd.DataFrame):
         """
@@ -54,9 +50,6 @@ class DataWarehouse:
                 combined.to_parquet(path)
             except Exception as e:
                 print(f"Error merging parquet {path}: {e}")
-                # Fallback overwrite if corrupt? Or backup?
-                # For now, overwrite if read fails is risky, let's just write the new chunk if file is totally borked
-                # or raise. Let's try to overwrite if it was empty/corrupt
                 df = df.drop_duplicates(subset=['startTime']).sort_values(by='startTime')
                 df.to_parquet(path)
         else:
@@ -98,10 +91,6 @@ class DataWarehouse:
             return 0
 
         try:
-            # Optimization: Read only metadata or last row?
-            # Pandas read_parquet reads full file usually unless using filters.
-            # Fastparquet or PyArrow allow reading columns.
-            # For simplicity, read 'startTime' column only?
             df = pd.read_parquet(path, columns=['startTime'])
             if not df.empty:
                 return int(df['startTime'].iloc[-1])
