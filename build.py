@@ -26,8 +26,6 @@ args = [
     f"--add-data=app_icon.png{os.pathsep}.",  # Add icon to root of bundle for pywebview
 
     "--icon=app_icon.ico",
-    # Splash screen removed
-    # "--splash=splash.png",
 
     # Hidden imports often missed by analysis
     "--hidden-import=uvicorn.logging",
@@ -51,6 +49,8 @@ args = [
     "--hidden-import=pystray.backends.win32",
     "--hidden-import=pystray.backends.xorg",
     "--hidden-import=pystray.backends.gtk",
+    # Explicitly add google.genai just in case
+    "--hidden-import=google.genai",
 
     "--clean",
 ]
