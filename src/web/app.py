@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import pandas as pd
 import json
+import numpy as np
 
 from src.database import SessionLocal, engine, Settings, init_db, User, Strategy, BacktestResult
 from src.bybit_client import BybitClient
@@ -367,6 +368,20 @@ async def run_backtest(
                      indicators=[ind.col_name or ind.name for ind in recipe.indicators]
                  )
 
+                 # Sanitize NaN for JSON
+                 # Helper to replace NaN
+                 def sanitize(obj):
+                     if isinstance(obj, float):
+                         if np.isnan(obj) or np.isinf(obj):
+                             return 0.0
+                     if isinstance(obj, dict):
+                         return {k: sanitize(v) for k, v in obj.items()}
+                     if isinstance(obj, list):
+                         return [sanitize(v) for v in obj]
+                     return obj
+
+                 res = sanitize(res)
+
                  # Inject chart into response
                  return [{
                     "params": {"name": strat.name},
@@ -389,6 +404,7 @@ async def run_backtest(
                     "metrics": res
                 }]
         except Exception as e:
+            traceback.print_exc()
             return {"error": f"Strategy Execution Error: {e}"}
 
     else:
