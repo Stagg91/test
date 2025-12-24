@@ -26,7 +26,9 @@ args = [
     f"--add-data=app_icon.png{os.pathsep}.",  # Add icon to root of bundle for pywebview
 
     "--icon=app_icon.ico",
-    "--splash=splash.png",
+
+    # Collect all google.genai data and modules
+    "--collect-all=google.genai",
 
     # Hidden imports often missed by analysis
     "--hidden-import=uvicorn.logging",

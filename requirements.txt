@@ -6,7 +6,7 @@ fastapi
 uvicorn
 pandas
 pandas_ta
-google-generativeai
+google-genai
 sqlalchemy
 jinja2
 plotly

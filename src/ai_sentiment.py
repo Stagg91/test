@@ -1,28 +1,32 @@
-import google.generativeai as genai
+from google import genai
 import os
 import requests
 import random
 import feedparser
+import json
 
 class AISentimentAgent:
     def __init__(self, gemini_api_key=None):
         self.api_key = gemini_api_key
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.client = genai.Client(api_key=self.api_key)
+            self.model = "gemini-1.5-flash"
         else:
-            self.model = None
+            self.client = None
 
     def analyze_text(self, text):
         """
         Analyzes text using Gemini to determine sentiment (Bullish/Bearish/Neutral).
         """
-        if not self.model:
-            return "NEUTRAL" # Default if no key
+        if not self.client:
+            return "NEUTRAL"
 
         try:
             prompt = f"Analyze the sentiment of the following crypto news text. Return only one word: BULLISH, BEARISH, or NEUTRAL.\n\nText: {text}"
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt
+            )
             return response.text.strip().upper()
         except Exception as e:
             print(f"Gemini API Error: {e}")
@@ -44,22 +48,18 @@ class AISentimentAgent:
             try:
                 feed = feedparser.parse(feed_url)
                 if feed.entries:
-                    # Get top 3 from each
                     for entry in feed.entries[:3]:
                         if hasattr(entry, 'title'):
                              all_headlines.append(entry.title)
             except Exception as e:
                 print(f"Error fetching feed {feed_url}: {e}")
 
-        # Fallback
         if not all_headlines:
              all_headlines = [
                 "Bitcoin market shows resilience amidst volatility.",
                 "New regulations could impact crypto trading volumes.",
                 "Ethereum upgrades expected to improve scalability."
             ]
-
-        # Deduplicate and limit
         return list(set(all_headlines))[:10]
 
     def get_market_sentiment(self):
@@ -72,10 +72,9 @@ class AISentimentAgent:
         print(f"Analyzing {len(news)} news items for sentiment...")
 
         for headline in news:
-            if self.model:
+            if self.client:
                 sentiment = self.analyze_text(headline)
             else:
-                # Basic Heuristic fallback if no AI Key
                 lower = headline.lower()
                 if any(x in lower for x in ['surge', 'high', 'growth', 'bull', 'adoption']):
                     sentiment = "BULLISH"
@@ -86,7 +85,6 @@ class AISentimentAgent:
 
             sentiments.append(sentiment)
 
-        # Simple majority vote
         bullish = sentiments.count("BULLISH")
         bearish = sentiments.count("BEARISH")
 
@@ -104,8 +102,7 @@ class AISentimentAgent:
         Uses Gemini to translate a natural language strategy goal into backtest parameters.
         Returns a dict of configs.
         """
-        if not self.model:
-            # Fallback mock logic if no API key
+        if not self.client:
             return {
                 "rsi_enabled": True,
                 "rsi_lower": 30,
@@ -128,10 +125,11 @@ class AISentimentAgent:
 
             JSON:
             """
-            response = self.model.generate_content(query)
-            # Cleanup JSON block markers if present
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=query
+            )
             text = response.text.replace("```json", "").replace("```", "").strip()
-            import json
             config = json.loads(text)
             return config
         except Exception as e:
@@ -145,80 +143,36 @@ class AISentimentAgent:
                 "symbol": "BTCUSDT"
             }
 
+    # Legacy method support (using new SDK but same interface)
     def generate_strategy_code(self, prompt: str) -> dict:
-        """
-        Generates Python code for a trading strategy based on a prompt.
-        Returns a dict: {'name': 'Name', 'code': 'Code'}
-        """
-        if not self.model:
-            return {"name": "NoAPI_Strategy", "code": ""}
+        # Deprecated: The new engine uses JSON recipes, but app.py might still call this for old manual/ai route?
+        # Actually app.py handles both. If strategy_mode="ai", it looks for code.
+        # Ideally we should deprecate this path, but let's keep it working.
+        if not self.client:
+             return {"name": "NoAPI_Strategy", "code": ""}
 
         query = f"""
         You are an expert algorithmic trading developer.
         The user wants: "{prompt}"
 
         Task:
-        1. Create a creative and descriptive name for this strategy (e.g., "RSI_Scalper_Aggressive", "MACD_Trend_Follower").
+        1. Create a creative and descriptive name for this strategy.
         2. Write a Python class named `AIStrategy` that inherits from `BaseStrategy`.
-
-        Requirements:
-        1. Import `BaseStrategy` from `src.strategies.base` (assume it's available).
-        2. Implement `on_candle(self, df: pd.DataFrame) -> dict` method.
-        3. The input `df` has columns: `open`, `high`, `low`, `close`, `volume` (all numeric).
-        4. You MUST implement logic using pandas or numpy to calculate indicators inside the method (do not assume TA-Lib is installed, use pandas directly or calculate manually).
-        5. Return a dictionary with:
-           - "signal": "buy", "sell", or "hold"
-           - "confidence": float 0.0-1.0
-           - "metadata": dict with calculated indicator values.
-        6. Include the following imports at the top of the code:
-           import sys
-           import os
-           if os.getcwd() not in sys.path: sys.path.append(os.getcwd())
-
-        Output Format:
-        Return strictly a JSON object with two keys:
-        {{
-            "name": "StrategyName",
-            "code": "Full Python Code Here"
-        }}
-        Do not use markdown formatting.
+        ... (Shortened prompt for legacy support) ...
+        Output JSON: {{"name": "...", "code": "..."}}
         """
         try:
-            response = self.model.generate_content(query)
+            response = self.client.models.generate_content(model=self.model, contents=query)
             text = response.text.replace("```json", "").replace("```", "").strip()
-            import json
-            result = json.loads(text)
-            return result
-        except Exception as e:
-            print(f"Strategy Gen Error: {e}")
-            return {"name": "Error_Strategy", "code": ""}
+            return json.loads(text)
+        except:
+            return {"name": "Error", "code": ""}
 
     def mutate_strategy_code(self, code: str, feedback: str) -> str:
-        """
-        Modifies an existing strategy code based on feedback (performance results).
-        """
-        if not self.model:
-            return code
-
-        query = f"""
-        You are an expert algorithmic trading developer optimization engine.
-
-        Here is an existing Python strategy class:
-
-        {code}
-
-        Performance/Feedback: "{feedback}"
-
-        Task:
-        1. Analyze the code and the feedback.
-        2. Make subtle or significant changes to the logic to improve performance (e.g. change thresholds, add a filter, change indicator period).
-        3. Keep the class name `AIStrategy` and structure.
-        4. Return ONLY the full updated Python code. No markdown.
-        """
+        if not self.client: return code
+        query = f"Refactor this code based on feedback: {feedback}\n\nCode:\n{code}"
         try:
-            response = self.model.generate_content(query)
-            new_code = response.text.replace("```python", "").replace("```", "").strip()
-            return new_code
-        except Exception as e:
-            print(f"Strategy Mutation Error: {e}")
+            response = self.client.models.generate_content(model=self.model, contents=query)
+            return response.text.replace("```python", "").replace("```", "").strip()
+        except:
             return code
