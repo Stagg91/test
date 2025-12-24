@@ -65,7 +65,8 @@
                 </div>
             </div>
             <div class="card-footer d-flex justify-content-between">
-                <button class="btn btn-sm btn-outline-light" onclick="generateNewStrategy()">
+                <!-- Use Modal trigger instead of JS function direct call -->
+                <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#aiStrategyModal" onclick="console.log('Opened AI Modal')">
                     <i class="fa-solid fa-plus"></i> New AI Idea
                 </button>
                 <small class="text-muted">Simulates last 1000 candles</small>
@@ -100,8 +101,6 @@
             <div class="card-footer">
                 <form action="/settings" method="post" class="d-grid">
                     <input type="hidden" name="auto_evolve" value="{% if settings.auto_evolve %}false{% else %}true{% endif %}">
-                    <!-- Need to preserve other settings? Ideally this is an AJAX toggle but simple form for now -->
-                     <!-- Actually, linking to settings is safer or using a specific toggle route -->
                     <a href="/settings" class="btn btn-sm btn-outline-secondary">Configure Engine</a>
                 </form>
             </div>
@@ -124,6 +123,33 @@
     </div>
 </div>
 
+<!-- New AI Strategy Modal -->
+<div class="modal fade" id="aiStrategyModal" tabindex="-1" aria-labelledby="aiStrategyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light border-gold">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="aiStrategyModalLabel"><i class="fa-solid fa-wand-magic-sparkles text-gold"></i> Design New Strategy</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Describe your strategy idea in plain English. The AI will convert it into a trading algorithm.</p>
+        <div class="mb-3">
+            <label for="aiPromptInput" class="form-label">Strategy Description</label>
+            <textarea class="form-control bg-black text-white border-secondary" id="aiPromptInput" rows="3" placeholder="e.g. Bollinger Band breakout with RSI filter..."></textarea>
+        </div>
+        <div class="mb-3">
+            <label for="aiCountInput" class="form-label">Variations</label>
+            <input type="number" class="form-control bg-black text-white border-secondary" id="aiCountInput" value="1" min="1" max="5">
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-gold" onclick="submitAIStrategy()" data-bs-dismiss="modal">Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -131,7 +157,7 @@
     // 1. Market Scan Polling
     async function updateMarketScan() {
         try {
-            const res = await fetch('/api/market_watch'); // Reusing existing endpoint
+            const res = await fetch('/api/market_watch');
             const data = await res.json();
 
             const list = document.getElementById('marketScanList');
@@ -221,20 +247,20 @@
         }
     }
 
-    // 3. New Idea Generator
-    async function generateNewStrategy() {
-        const prompt = prompt("Describe the new strategy idea (e.g., 'Bollinger Band breakout with RSI filter'):");
+    // 3. New Idea Generator (Updated to use Modal)
+    async function submitAIStrategy() {
+        const prompt = document.getElementById('aiPromptInput').value;
+        const count = document.getElementById('aiCountInput').value;
+
         if(prompt) {
-            logConsole(`Requesting AI generation for: "${prompt}"... (This may take 10-20s)`);
+            logConsole(`Requesting AI generation for: "${prompt}" (${count} variations)... (This may take 10-20s)`);
+            console.log("Submitting AI Generation Request:", prompt);
+
             const formData = new FormData();
             formData.append('prompt', prompt);
-            formData.append('count', 1);
+            formData.append('count', count);
 
             try {
-                // We use the existing generate route but maybe need an API version that returns JSON instead of redirect?
-                // The existing route redirects. We can just submit it and let it reload, or fetch it.
-                // Since existing route redirects to /strategies, let's just use fetch and ignore redirect content,
-                // assuming it works.
                 await fetch('/strategies/generate', {
                     method: 'POST',
                     body: formData
@@ -243,7 +269,10 @@
                 setTimeout(() => location.reload(), 2000);
             } catch(e) {
                 logConsole(`Generation Error: ${e}`);
+                console.error("Generation Error:", e);
             }
+        } else {
+            logConsole("Error: Prompt cannot be empty.");
         }
     }
 

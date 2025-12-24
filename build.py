@@ -52,6 +52,7 @@ args = [
     "--hidden-import=pystray.backends.win32",
     "--hidden-import=pystray.backends.xorg",
     "--hidden-import=pystray.backends.gtk",
+    "--hidden-import=pyarrow",
 
     "--clean",
 ]

@@ -29,7 +29,7 @@ class GeneticBreeder:
 
         for i in range(count):
             try:
-                recipe = self.ai_engine.generate_strategy_recipe(f"{prompt}. Variation {i+1}")
+                recipe = await self.ai_engine.generate_strategy_recipe(f"{prompt}. Variation {i+1}")
                 if recipe:
                     s_ai = Strategy(
                         name=recipe.name,
@@ -156,7 +156,7 @@ class GeneticBreeder:
         # Create 3 Children
         for i in range(3):
             try:
-                child_recipe = self.ai_engine.mutate_strategy_recipe(parents, feedback)
+                child_recipe = await self.ai_engine.mutate_strategy_recipe(parents, feedback)
 
                 if child_recipe:
                     # Rename to avoid duplicate names if AI forgets

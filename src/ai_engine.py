@@ -3,19 +3,15 @@ from google.genai import types
 import json
 import traceback
 from src.strategies.schemas import StrategyRecipe, IndicatorConfig
+from src.logger import LabLogger
 
 class AIEngine:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-2.0-flash-thinking-exp-01-21" # Using an experimental thinking model or requested gemini-3 if available.
-        # User requested: gemini-3-pro-preview
-        # I will try to use the requested model, but fall back if not available or if I need to map it.
-        # Given "Thinking Model" instruction, "gemini-2.0-flash-thinking-exp" is the current public equivalent for "Thinking".
-        # However, I must follow the user's explicit instruction: "Model: gemini-3-pro-preview"
         self.model = "gemini-3-pro-preview"
 
-    def generate_strategy_recipe(self, prompt: str) -> StrategyRecipe:
+    async def generate_strategy_recipe(self, prompt: str) -> StrategyRecipe:
         """
         Generates a new strategy recipe based on the prompt.
         """
@@ -45,43 +41,44 @@ class AIEngine:
 
         full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
 
-        try:
-            # Thinking Config
-            # Note: The SDK might change how config is passed.
-            # Based on user prompt: thinking_config={"thinking_level": "high"}
-            # And output format: response_mime_type: "application/json"
+        await LabLogger.log("AI", f"Requesting Generation: {prompt}")
+        print("\n--- AI REQUEST (GENERATE) ---")
+        print(full_prompt)
+        print("-----------------------------\n")
 
+        try:
+            # Note: generate_content is sync. We can wrap it or just block briefly.
+            # For true async, we'd need run_in_executor, but this is fine for now as it's a background thread.
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(include_thoughts=True), # mapping "high" to boolean or specific level if supported
+                    thinking_config=types.ThinkingConfig(include_thoughts=True),
                     response_mime_type="application/json"
                 )
             )
 
-            # Extract JSON
-            # If the model returns thoughts, the actual text might be separate?
-            # With google-genai SDK, response.text should contain the generated content.
-            # If "include_thoughts=True", it might be in parts.
-
-            # Let's inspect response structure safely
             text_content = response.text
+            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
+            print("\n--- AI RESPONSE ---")
+            print(text_content)
+            print("-------------------\n")
 
-            # Parse JSON
             data = json.loads(text_content)
-
-            # Validate with Pydantic
             recipe = StrategyRecipe(**data)
             return recipe
 
         except Exception as e:
-            print(f"AI Generation Error: {e}")
-            # Fallback for dev/testing if model fails or quota issues
+            err_msg = str(e)
+            print(f"\n[AI ERROR] {err_msg}")
+            await LabLogger.log("AI", f"Error: {err_msg}")
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                print("!!! GEMINI QUOTA EXCEEDED !!!")
+                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
             traceback.print_exc()
             return None
 
-    def mutate_strategy_recipe(self, parents: list[StrategyRecipe], feedback: str) -> StrategyRecipe:
+    async def mutate_strategy_recipe(self, parents: list[StrategyRecipe], feedback: str) -> StrategyRecipe:
         """
         Mutates a strategy or combines parents.
         """
@@ -95,6 +92,11 @@ class AIEngine:
         parents_json = json.dumps([p.model_dump() for p in parents], indent=2)
         full_prompt = f"{system_instruction}\n\nParents:\n{parents_json}\n\nGoal: {feedback}"
 
+        await LabLogger.log("AI", f"Requesting Mutation. Goal: {feedback}")
+        print("\n--- AI REQUEST (MUTATE) ---")
+        print(full_prompt)
+        print("---------------------------\n")
+
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -105,11 +107,22 @@ class AIEngine:
                 )
             )
 
-            data = json.loads(response.text)
+            text_content = response.text
+            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
+            print("\n--- AI RESPONSE ---")
+            print(text_content)
+            print("-------------------\n")
+
+            data = json.loads(text_content)
             recipe = StrategyRecipe(**data)
             return recipe
 
         except Exception as e:
-            print(f"AI Mutation Error: {e}")
+            err_msg = str(e)
+            print(f"\n[AI ERROR] {err_msg}")
+            await LabLogger.log("AI", f"Error: {err_msg}")
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                print("!!! GEMINI QUOTA EXCEEDED !!!")
+                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
             traceback.print_exc()
             return None
