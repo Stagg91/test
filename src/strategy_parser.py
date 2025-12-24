@@ -2,6 +2,7 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 import traceback
+import re
 from src.strategies.schemas import StrategyRecipe
 
 class StrategyParser:
@@ -38,9 +39,6 @@ class StrategyParser:
                 traceback.print_exc()
 
         # 2. Sanitize Column Names (Fix pandas_ta dots)
-        # pandas_ta often creates columns like "BBU_20_2.0".
-        # The dot confuses pandas.eval(). We replace it with "_".
-
         rename_map = {}
         for col in df.columns:
             if "." in col:
@@ -48,15 +46,31 @@ class StrategyParser:
                 rename_map[col] = new_col
 
         if rename_map:
+            print(f"[Parser] Renaming columns: {rename_map}")
             df.rename(columns=rename_map, inplace=True)
 
         # 3. Sanitize Logic Strings
-        entry_logic = strategy.entry_logic
-        exit_logic = strategy.exit_logic
+        # Use Regex to replace dots in identifiers (e.g. BBU_20.0 -> BBU_20_0)
+        # Identifiers start with letter/underscore, contain alphanum/underscore/dots
+        # We avoid matching floats like "0.03" or "50.0" by ensuring start char is non-digit.
+        # Regex: ([a-zA-Z_][\w\.]*) matches identifiers.
 
-        for old, new in rename_map.items():
-            entry_logic = entry_logic.replace(old, new)
-            exit_logic = exit_logic.replace(old, new)
+        def sanitize_string(s):
+            if not s: return s
+
+            def replace_match(m):
+                text = m.group(0)
+                if "." in text:
+                    return text.replace(".", "_")
+                return text
+
+            # Regex for identifier: Letter/_ then word chars/dots
+            return re.sub(r'([a-zA-Z_][\w\.]*)', replace_match, s)
+
+        entry_logic = sanitize_string(strategy.entry_logic)
+        exit_logic = sanitize_string(strategy.exit_logic)
+
+        print(f"[Parser] Sanitized Entry Logic: {entry_logic}")
 
         # 4. Evaluate Logic
         df['signal'] = 0

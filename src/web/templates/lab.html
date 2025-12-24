@@ -41,22 +41,43 @@
             <div class="card-body">
                 <!-- Quick Backtest Form -->
                 <form id="labBacktestForm" class="mb-3">
-                    <div class="input-group mb-2">
-                        <select class="form-select" id="labStrategySelect">
-                            <option value="" selected disabled>Select Strategy...</option>
-                            {% for s in strategies %}
-                            <option value="{{ s.id }}">{{ s.name }} (Gen {{ s.generation }})</option>
-                            {% endfor %}
-                        </select>
-                        <select class="form-select" id="labSymbolSelect" style="max-width: 120px;">
-                            <option value="BTCUSDT">BTC</option>
-                            <option value="ETHUSDT">ETH</option>
-                            <option value="SOLUSDT">SOL</option>
-                        </select>
-                        <button class="btn btn-info" type="button" onclick="runLabBacktest()">
-                            <i class="fa-solid fa-play"></i> Test
-                        </button>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted">Strategy & Symbol</label>
+                        <div class="input-group">
+                            <select class="form-select" id="labStrategySelect">
+                                <option value="" selected disabled>Select Strategy...</option>
+                                {% for s in strategies %}
+                                <option value="{{ s.id }}">{{ s.name }} (Gen {{ s.generation }})</option>
+                                {% endfor %}
+                            </select>
+                            <select class="form-select" id="labSymbolSelect" style="max-width: 120px;">
+                                <option value="BTCUSDT">BTC</option>
+                                <option value="ETHUSDT">ETH</option>
+                                <option value="SOLUSDT">SOL</option>
+                            </select>
+                        </div>
                     </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small text-muted">Timeframe & Duration</label>
+                        <div class="input-group">
+                            <select class="form-select" id="labTimeframeSelect">
+                                <option value="1">1 Min</option>
+                                <option value="5">5 Min</option>
+                                <option value="15">15 Min</option>
+                                <option value="60" selected>1 Hour</option>
+                                <option value="240">4 Hours</option>
+                                <option value="D">Daily</option>
+                            </select>
+                            <!-- Date inputs could be added here, currently defaulting to recent history -->
+                            <input type="date" class="form-control" id="labStartDate" placeholder="Start">
+                            <input type="date" class="form-control" id="labEndDate" placeholder="End">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-info w-100" type="button" onclick="runLabBacktest()">
+                        <i class="fa-solid fa-play"></i> Run Simulation
+                    </button>
                 </form>
 
                 <!-- Results Display -->
@@ -69,7 +90,6 @@
                 <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#aiStrategyModal" onclick="console.log('Opened AI Modal')">
                     <i class="fa-solid fa-plus"></i> New AI Idea
                 </button>
-                <small class="text-muted">Simulates last 1000 candles</small>
             </div>
         </div>
     </div>
@@ -189,13 +209,16 @@
     async function runLabBacktest() {
         const stratId = document.getElementById('labStrategySelect').value;
         const symbol = document.getElementById('labSymbolSelect').value;
+        const interval = document.getElementById('labTimeframeSelect').value;
+        const startDate = document.getElementById('labStartDate').value;
+        const endDate = document.getElementById('labEndDate').value;
 
         if(!stratId) {
             logConsole("Error: Please select a strategy.");
             return;
         }
 
-        logConsole(`Starting backtest for Strategy ID ${stratId} on ${symbol}...`);
+        logConsole(`Starting backtest for Strategy ID ${stratId} on ${symbol} (${interval})...`);
         const resultDiv = document.getElementById('labBacktestResult');
         resultDiv.innerHTML = '<div class="text-center text-info"><div class="spinner-border" role="status"></div> Running simulation...</div>';
 
@@ -204,29 +227,43 @@
             formData.append('symbol', symbol);
             formData.append('strategy_mode', 'ai');
             formData.append('strategy_id', stratId);
-            formData.append('interval', '60');
+            formData.append('interval', interval);
             formData.append('initial_balance', '10000');
+
+            if (startDate) formData.append('start_time', startDate);
+            if (endDate) formData.append('end_time', endDate);
 
             const res = await fetch('/run_backtest', {
                 method: 'POST',
                 body: formData
             });
 
-            const data = await res.json();
+            // Handle non-JSON responses (e.g. 500 error page)
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(`Server returned invalid JSON: ${text.substring(0, 100)}...`);
+            }
 
             if(data.error) {
                 resultDiv.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
                 logConsole(`Error: ${data.error}`);
-            } else if (data.length > 0) {
+            } else if (Array.isArray(data) && data.length > 0) {
                 const metrics = data[0].metrics;
-                const pnlClass = metrics.total_pnl_abs >= 0 ? 'text-success' : 'text-danger';
+                const pnl = metrics.total_pnl_abs || 0;
+                const roi = metrics.roi_percent || 0;
+                const dd = metrics.max_drawdown || 0;
+
+                const pnlClass = pnl >= 0 ? 'text-success' : 'text-danger';
 
                 resultDiv.innerHTML = `
-                    <h5 class="${pnlClass}">PnL: $${metrics.total_pnl_abs.toFixed(2)} (${metrics.roi_percent.toFixed(2)}%)</h5>
+                    <h5 class="${pnlClass}">PnL: $${pnl.toFixed(2)} (${roi.toFixed(2)}%)</h5>
                     <p>
                     Trades: ${metrics.num_trades}<br>
                     Win Rate: ${(metrics.win_rate * 100).toFixed(1)}%<br>
-                    Max DD: ${metrics.max_drawdown ? metrics.max_drawdown.toFixed(2) : 0}%
+                    Max DD: ${dd.toFixed(2)}%
                     </p>
                     <hr>
                     <small class="text-muted">Last 5 Trades:</small>
@@ -236,9 +273,10 @@
                         ).join('') : 'No trades'}
                     </ul>
                 `;
-                logConsole(`Backtest Complete. ROI: ${metrics.roi_percent.toFixed(2)}%`);
+                logConsole(`Backtest Complete. ROI: ${roi.toFixed(2)}%`);
             } else {
                  resultDiv.innerHTML = "No results returned.";
+                 logConsole("No results.");
             }
 
         } catch(e) {
