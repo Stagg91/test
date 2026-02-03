@@ -1,7 +1,4 @@
 @echo off
-:: Ensure we are in the script's directory
-cd /d "%~dp0"
-
 echo Staggs Hectic Trader Installer
 echo ------------------------------
 
