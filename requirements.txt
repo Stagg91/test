@@ -5,7 +5,6 @@ mock
 fastapi
 uvicorn
 pandas
-pandas_ta
 google-genai
 sqlalchemy
 jinja2
