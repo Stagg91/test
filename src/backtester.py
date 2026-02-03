@@ -3,12 +3,21 @@ import numpy as np
 import traceback
 from src.strategy_parser import StrategyParser
 from src.strategies.schemas import StrategyRecipe
+from src.logger import LabLogger
+import asyncio
 
 class Backtester:
     def __init__(self, data: pd.DataFrame, initial_balance: float = 10000.0):
         self.data = data.copy()
         self.initial_balance = initial_balance
         self.parser = StrategyParser()
+
+    def _log(self, msg, details=None):
+        try:
+             loop = asyncio.get_event_loop()
+             if loop.is_running():
+                 loop.create_task(LabLogger.log("BACKTEST", msg, details))
+        except: pass
 
     def run_vectorized_backtest(self, strategy: StrategyRecipe) -> dict:
         """
@@ -18,6 +27,11 @@ class Backtester:
             # 1. Parse & Execute Strategy -> Get Signals
             df = self.parser.parse_and_execute(self.data, strategy)
 
+            # Check if any signals exist
+            if 'signal' not in df.columns:
+                 self._log("Critical Error: 'signal' column missing after parsing.")
+                 return {"error": "Signal generation failed", "roi_percent": 0, "max_drawdown": 0, "equity_curve": []}
+
             # 2. Vectorized PnL Calculation
             df['position'] = np.nan
             df.loc[df['signal'] == 1, 'position'] = 1
@@ -25,6 +39,11 @@ class Backtester:
 
             # Fill forward: If 1, stays 1 until 0.
             df['position'] = df['position'].ffill().fillna(0)
+
+            # Check if any trades were taken
+            if df['position'].sum() == 0:
+                self._log("Warning: No positions were taken during backtest.")
+                # We still return the flat equity curve
 
             # Calculate Returns
             df['pct_change'] = df['close'].pct_change()
@@ -76,12 +95,15 @@ class Backtester:
             }
 
         except Exception as e:
-            print(f"Backtest Error: {e}")
+            err_msg = f"Backtest Critical Error: {e}"
+            print(err_msg)
             traceback.print_exc()
+            self._log(err_msg)
             return {
                 "roi_percent": -100,
                 "max_drawdown": -100,
-                "fitness": -100
+                "fitness": -100,
+                "error": str(e)
             }
 
     def run_strategy_instance(self, strategy_instance):

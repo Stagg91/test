@@ -3,7 +3,7 @@ import threading
 import time
 import pandas as pd
 from src.web.app import app
-from src.database import SessionLocal, Settings, Strategy
+from src.database import SessionLocal, Settings, Strategy, SentimentLog
 from src.bybit_client import BybitClient
 from src.paper_trader import PaperTrader
 from src.risk_manager import RiskManager
@@ -11,9 +11,11 @@ from src.notifications import NotificationManager
 from src.logger import LabLogger
 from src.strategy_parser import StrategyParser
 from src.strategies.schemas import StrategyRecipe
+from src.ai_sentiment import AISentimentAgent
 import traceback
 import sys
 import os
+import asyncio
 
 # Global Risk Manager
 risk_manager = RiskManager()
@@ -133,6 +135,32 @@ def bot_loop():
                 if client and active_strategy and settings.is_active:
                     print(f"Running Strategy: {active_strategy.name} on {len(symbols)} pairs...")
 
+                    # --- NEWS SENTIMENT CHECK ---
+                    # Check sentiment every loop? Or every X minutes?
+                    # For now, check every loop (heavy API usage? AISentiment caches?)
+                    # Let's check once per loop iteration (which is every 60s)
+
+                    sentiment = "NEUTRAL"
+                    try:
+                        agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
+                        sentiment = agent.get_market_sentiment()
+
+                        # Log sentiment to DB
+                        s_log = SentimentLog(timestamp=time.time(), sentiment=sentiment, source="NewsFeed")
+                        db.add(s_log)
+                        db.commit()
+
+                        # Async log to UI
+                        # Since we are in a thread, we use run_until_complete with a NEW loop if needed,
+                        # or just fire-and-forget via LabLogger if loop is global.
+                        # LabLogger handles thread safety.
+                        loop = asyncio.new_event_loop()
+                        loop.run_until_complete(LabLogger.log("BOT", f"Market Sentiment: {sentiment}"))
+                        loop.close()
+
+                    except Exception as e:
+                        print(f"Sentiment Check Error: {e}")
+
                     # Parse Strategy Recipe
                     if active_strategy.content_json:
                         try:
@@ -165,6 +193,15 @@ def bot_loop():
                                 signal = "hold"
                                 if signal_val == 1: signal = "buy"
                                 elif signal_val == -1: signal = "sell"
+
+                                # --- APPLY NEWS FILTER ---
+                                if signal == "buy" and sentiment == "BEARISH":
+                                    print(f"[{symbol}] BUY Signal BLOCKED due to BEARISH sentiment.")
+                                    # Log to UI
+                                    loop = asyncio.new_event_loop()
+                                    loop.run_until_complete(LabLogger.log("BOT", f"Blocked BUY on {symbol} (Sentiment: BEARISH)"))
+                                    loop.close()
+                                    signal = "hold"
 
                                 # Check Positions
                                 positions = client.session.get_positions(category="linear", symbol=symbol)

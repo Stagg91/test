@@ -1,5 +1,7 @@
 import asyncio
 from typing import List
+import time
+import json
 
 class LabLogger:
     _instance = None
@@ -30,26 +32,36 @@ class LabLogger:
         cls._clients -= dead
 
     @classmethod
-    async def log(cls, category: str, message: str):
+    async def log(cls, category: str, message: str, details: any = None):
         """
         Logs a message and broadcasts it to connected clients.
-        Category: 'UI', 'API', 'AI', 'DB', 'SYSTEM'
+        Category: 'UI', 'API', 'AI', 'DB', 'SYSTEM', 'BACKTEST', 'DATA'
+        Details: Optional Dictionary or Object to be JSON serialized for inspection
         """
-        import time
-        import asyncio
         timestamp = time.strftime("%H:%M:%S")
-        entry = f"[{timestamp}] [{category}] {message}"
-        print(entry) # Standard stdout
 
-        # Store in history (limit 100)
+        # Serialize details if provided
+        details_str = ""
+        if details:
+            try:
+                # Use default str for non-serializable objects
+                details_str = f" | {json.dumps(details, default=str, indent=None)}"
+            except:
+                details_str = f" | {str(details)}"
+
+        entry = f"[{timestamp}] [{category}] {message}{details_str}"
+
+        # Console Output (Simplified for readability)
+        print(f"[{timestamp}] [{category}] {message}")
+
+        # Store in history (limit 500 for verbose mode)
         cls._log_history.append(entry)
-        if len(cls._log_history) > 100:
+        if len(cls._log_history) > 500:
             cls._log_history.pop(0)
 
         # Broadcast Thread-Safe
         if cls._main_loop and cls._main_loop.is_running():
             try:
-                # If we are in the main loop, await directly?
                 # Check current loop
                 try:
                     curr = asyncio.get_running_loop()

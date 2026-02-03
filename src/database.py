@@ -68,6 +68,14 @@ class TradeLog(Base):
     timestamp = Column(String)
     profit = Column(Float, nullable=True)
 
+class SentimentLog(Base):
+    __tablename__ = 'sentiment_logs'
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(Float)
+    sentiment = Column(String) # BULLISH, BEARISH, NEUTRAL
+    source = Column(String) # "RSS", "AI", etc
+    raw_text = Column(String, nullable=True) # Summary of headlines
+
 # Database Setup
 import os
 import sys
