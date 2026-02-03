@@ -3,6 +3,8 @@ import pandas_ta as ta
 import numpy as np
 import traceback
 from src.strategies.schemas import StrategyRecipe
+from src.logger import LabLogger
+import asyncio
 
 class StrategyParser:
     def parse_and_execute(self, df: pd.DataFrame, strategy: StrategyRecipe) -> pd.DataFrame:
@@ -10,6 +12,15 @@ class StrategyParser:
         Applies indicators and logic to the DataFrame.
         Returns the DF with 'signal' column (-1, 0, 1).
         """
+        # Async helper to log safely from sync context
+        def log_sync(msg, details=None):
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(LabLogger.log("BACKTEST", msg, details))
+            except:
+                pass
+
         # Work on a copy
         df = df.copy()
 
@@ -17,7 +28,9 @@ class StrategyParser:
         for ind in strategy.indicators:
             try:
                 if not hasattr(df.ta, ind.name):
-                    print(f"Warning: Indicator {ind.name} not found in pandas_ta.")
+                    msg = f"Indicator '{ind.name}' not found in pandas_ta library."
+                    print(f"Warning: {msg}")
+                    log_sync(msg)
                     continue
 
                 # Call the indicator function
@@ -34,8 +47,10 @@ class StrategyParser:
                         df = pd.concat([df, result], axis=1)
 
             except Exception as e:
-                print(f"Error calculating {ind.name}: {e}")
+                msg = f"Error calculating indicator '{ind.name}': {e}"
+                print(msg)
                 traceback.print_exc()
+                log_sync(msg)
 
         # 2. Sanitize Column Names (Fix pandas_ta dots)
         # pandas_ta often creates columns like "BBU_20_2.0".
@@ -69,8 +84,17 @@ class StrategyParser:
             df.loc[entry_mask, 'signal'] = 1
             df.loc[exit_mask, 'signal'] = -1
 
-        except Exception as e:
-            print(f"Error evaluating logic: {e}")
-            traceback.print_exc()
+            # Log signal counts
+            buy_count = entry_mask.sum()
+            sell_count = exit_mask.sum()
+            log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
 
+        except Exception as e:
+            msg = f"Logic Evaluation Error: {e}"
+            print(msg)
+            traceback.print_exc()
+            log_sync(msg, {"entry": entry_logic, "exit": exit_logic})
+
+        # Final Clean: Remove duplicate columns if any crept in
+        df = df.loc[:, ~df.columns.duplicated()]
         return df

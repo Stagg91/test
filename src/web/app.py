@@ -79,6 +79,15 @@ def get_current_user(request: Request):
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # LOG REQUEST
+    try:
+        if not request.url.path.startswith("/static") and not request.url.path.startswith("/ws"):
+             # We need to await body carefully if we want to log it, but it consumes the stream.
+             # Safe approach: Log method and path.
+             await LabLogger.log("API", f"INCOMING: {request.method} {request.url.path}", {"params": dict(request.query_params)})
+    except:
+        pass
+
     # Allow static resources and specific pages
     if request.url.path in ["/login", "/setup", "/manifest.json", "/sw.js"] or request.url.path.startswith("/static"):
         return await call_next(request)
@@ -103,10 +112,13 @@ async def login_page(request: Request):
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    await LabLogger.log("AUTH", f"Login attempt for user: {username}")
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.hashed_password):
+        await LabLogger.log("AUTH", f"Login failed for {username}")
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid credentials"})
 
+    await LabLogger.log("AUTH", f"Login success for {username}")
     token = create_access_token({"sub": user.username})
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie(key="access_token", value=token, httponly=True)
@@ -327,6 +339,10 @@ async def run_backtest(
     macd_enabled: bool = Form(False),
     db: Session = Depends(get_db)
 ):
+    await LabLogger.log("BACKTEST", f"Starting Backtest on {symbol} ({interval})", {
+        "balance": initial_balance, "mode": strategy_mode, "strat_id": strategy_id
+    })
+
     de = DataEngine()
     # Convert dates to timestamp ms if provided
     ts_start = None
@@ -339,8 +355,10 @@ async def run_backtest(
     df = de.fetch_ohlcv(symbol, interval=interval, limit=1000 if (start_time or end_time) else 200, start_time=ts_start, end_time=ts_end)
 
     if df.empty:
+        await LabLogger.log("BACKTEST", "Error: No data found for specified range.")
         return {"error": "No data found"}
 
+    await LabLogger.log("BACKTEST", f"Data Loaded: {len(df)} candles.")
     bt = Backtester(df, initial_balance=initial_balance)
 
     if strategy_mode == "ai" and strategy_id:
@@ -439,7 +457,7 @@ async def generate_strategies(
     count: int = Form(3),
     db: Session = Depends(get_db)
 ):
-    await LabLogger.log("API", f"Requesting Generation: {prompt} (Count: {count})")
+    await LabLogger.log("AI", f"Requesting Generation: {prompt}", {"count": count})
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
 

@@ -41,7 +41,7 @@ class AIEngine:
 
         full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
 
-        await LabLogger.log("AI", f"Requesting Generation: {prompt}")
+        await LabLogger.log("AI", f"Sending Request to Gemini...", {"prompt": prompt})
         print("\n--- AI REQUEST (GENERATE) ---")
         print(full_prompt)
         print("-----------------------------\n")
@@ -59,23 +59,117 @@ class AIEngine:
             )
 
             text_content = response.text
-            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
+            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)", {"raw_response": text_content})
             print("\n--- AI RESPONSE ---")
             print(text_content)
             print("-------------------\n")
 
             data = json.loads(text_content)
             recipe = StrategyRecipe(**data)
+
+            # --- VALIDATION LOOP ---
+            is_valid, validation_msg = self.validate_strategy(recipe)
+            if not is_valid:
+                await LabLogger.log("AI", f"Strategy Validation Failed: {validation_msg}. Retrying...")
+                # We could implement a retry loop here (e.g. ask AI to fix).
+                # For now, let's just log it and return None to prevent broken strats.
+                # A better approach: "Recursively fix"
+                return await self.attempt_fix_strategy(recipe, validation_msg)
+
+            await LabLogger.log("AI", f"Strategy Validated: {recipe.name}")
             return recipe
 
         except Exception as e:
             err_msg = str(e)
             print(f"\n[AI ERROR] {err_msg}")
-            await LabLogger.log("AI", f"Error: {err_msg}")
+            await LabLogger.log("AI", f"Generation Error: {err_msg}")
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 print("!!! GEMINI QUOTA EXCEEDED !!!")
                 await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
             traceback.print_exc()
+            return None
+
+    def validate_strategy(self, recipe: StrategyRecipe) -> tuple[bool, str]:
+        """
+        Runs a micro-backtest to ensure the strategy is executable.
+        """
+        from src.data_warehouse import DataWarehouse
+        from src.backtester import Backtester
+
+        # Load a small snippet of data (cached if possible)
+        # We'll use a hardcoded small csv or fetch fresh if needed.
+        # Ideally, we keep a "validation_dataset.parquet"
+        try:
+             # Just create a dummy DF or load real data? Real data is better.
+             # Let's try loading from warehouse
+             wh = DataWarehouse()
+             # Try BTCUSDT, fallback to creating dummy data if fail
+             try:
+                 df = wh.load_data("BTCUSDT", "60", limit=500)
+             except:
+                 df = None
+
+             if df is None or df.empty:
+                 # Create dummy data
+                 import pandas as pd
+                 import numpy as np
+                 dates = pd.date_range(start='2024-01-01', periods=200, freq='h')
+                 df = pd.DataFrame({
+                     'startTime': dates,
+                     'open': np.random.rand(200)*100,
+                     'high': np.random.rand(200)*100,
+                     'low': np.random.rand(200)*100,
+                     'close': np.random.rand(200)*100,
+                     'volume': np.random.rand(200)*1000
+                 })
+
+             bt = Backtester(df)
+             res = bt.run_vectorized_backtest(recipe)
+
+             if "error" in res:
+                 return False, res['error']
+
+             # Optional: Check for 0 trades?
+             # if res['total_trades'] == 0:
+             #    return False, "Strategy produced 0 trades on validation data."
+
+             return True, "OK"
+        except Exception as e:
+             return False, str(e)
+
+    async def attempt_fix_strategy(self, failed_recipe: StrategyRecipe, error_msg: str) -> StrategyRecipe:
+        """
+        Asks AI to fix the broken strategy.
+        """
+        await LabLogger.log("AI", "Attempting self-correction...")
+        prompt = f"""
+        The following strategy failed backtesting validation.
+        Error: {error_msg}
+
+        Strategy JSON:
+        {failed_recipe.model_dump_json()}
+
+        Please fix the error and return the corrected JSON.
+        """
+
+        try:
+             response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+             data = json.loads(response.text)
+             new_recipe = StrategyRecipe(**data)
+
+             # Re-validate
+             is_valid, msg = self.validate_strategy(new_recipe)
+             if is_valid:
+                 await LabLogger.log("AI", "Self-correction successful!")
+                 return new_recipe
+             else:
+                 await LabLogger.log("AI", f"Self-correction failed: {msg}")
+                 return None
+        except:
             return None
 
     async def mutate_strategy_recipe(self, parents: list[StrategyRecipe], feedback: str) -> StrategyRecipe:

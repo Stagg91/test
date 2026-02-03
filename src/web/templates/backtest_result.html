@@ -44,6 +44,26 @@
         </div>
     </div>
 
+    <!-- Error / Status Message Area -->
+    {% if trades|length == 0 %}
+    <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
+        <i class="fa-solid fa-triangle-exclamation fa-2x me-3"></i>
+        <div>
+            <h5 class="alert-heading">No Trades Executed</h5>
+            <p>
+                The backtest finished successfully, but the strategy did not generate any valid Buy/Sell signals.
+                <br>
+                <strong>Potential Causes:</strong>
+                <ul>
+                    <li>The Logic conditions (e.g. <code>RSI < 10</code>) are too strict and never triggered.</li>
+                    <li>Missing data or indicator calculation errors (Check the Console Log below).</li>
+                    <li>Logic string syntax errors handled silently by pandas.eval().</li>
+                </ul>
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Strategy Visualization (Price + Indicators) -->
     {% if chart_json %}
     <div class="card mb-4">
@@ -58,7 +78,13 @@
     <div class="card mb-4">
         <div class="card-header"><i class="fa-solid fa-chart-area"></i> Equity Curve</div>
         <div class="card-body">
-            <div id="equityChart" style="width:100%;height:400px;"></div>
+            {% if equity_curve|length > 0 %}
+                <div id="equityChart" style="width:100%;height:400px;"></div>
+            {% else %}
+                <div class="text-center text-muted py-5">
+                    <p>No Equity Curve data available (Zero Trades).</p>
+                </div>
+            {% endif %}
         </div>
     </div>
 
@@ -66,6 +92,7 @@
     <div class="card">
         <div class="card-header"><i class="fa-solid fa-list"></i> Trade Log ({{ trades|length }})</div>
         <div class="card-body">
+            {% if trades|length > 0 %}
             <div class="table-responsive" style="max_height: 500px; overflow-y: auto;">
                 <table class="table table-sm table-striped">
                     <thead>
@@ -92,6 +119,9 @@
                     </tbody>
                 </table>
             </div>
+            {% else %}
+                <div class="text-center py-3 text-muted">No trades to display.</div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -100,43 +130,48 @@
 <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script>
     var equityData = {{ equity_curve|tojson }};
-    // Generate simple index for x-axis if timestamps missing in curve
-    var xData = Array.from({length: equityData.length}, (_, i) => i);
 
-    var trace1 = {
-      x: xData,
-      y: equityData,
-      mode: 'lines',
-      name: 'Equity',
-      line: {
-        color: '#FFD700',
-        width: 2
-      }
-    };
+    if (equityData && equityData.length > 0) {
+        // Generate simple index for x-axis if timestamps missing in curve
+        var xData = Array.from({length: equityData.length}, (_, i) => i);
 
-    var layout = {
-      title: 'Strategy Performance',
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
-      font: {
-        color: '#fff'
-      },
-      xaxis: {
-        title: 'Candles',
-        gridcolor: '#444'
-      },
-      yaxis: {
-        title: 'Balance (USDT)',
-        gridcolor: '#444'
-      }
-    };
+        var trace1 = {
+          x: xData,
+          y: equityData,
+          mode: 'lines',
+          name: 'Equity',
+          line: {
+            color: '#FFD700',
+            width: 2
+          }
+        };
 
-    Plotly.newPlot('equityChart', [trace1], layout);
+        var layout = {
+          title: 'Strategy Performance',
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          font: {
+            color: '#fff'
+          },
+          xaxis: {
+            title: 'Candles',
+            gridcolor: '#444'
+          },
+          yaxis: {
+            title: 'Balance (USDT)',
+            gridcolor: '#444'
+          }
+        };
+
+        Plotly.newPlot('equityChart', [trace1], layout);
+    }
 
     // Strategy Chart
     {% if chart_json %}
         var chartData = {{ chart_json|tojson }};
-        Plotly.newPlot('strategyChart', chartData.data, chartData.layout);
+        if(chartData && chartData.data) {
+             Plotly.newPlot('strategyChart', chartData.data, chartData.layout);
+        }
     {% endif %}
 </script>
 {% endblock %}
