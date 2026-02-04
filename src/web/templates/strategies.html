@@ -73,12 +73,13 @@
                         </form>
                         {% endif %}
 
-                        <form action="/strategies/backtest/{{ s.id }}" method="post" class="d-inline ms-1">
-                            <button class="btn btn-sm btn-outline-warning">Backtest</button>
-                        </form>
+                        <button type="button" class="btn btn-sm btn-outline-warning ms-1"
+                                onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">
+                            <i class="fa-solid fa-play"></i> Backtest
+                        </button>
 
-                        <button class="btn btn-sm btn-outline-info ms-1" data-bs-toggle="modal" data-bs-target="#viewCodeModal_{{ s.id }}">
-                            View
+                        <button type="button" class="btn btn-sm btn-outline-info ms-1" data-bs-toggle="modal" data-bs-target="#viewCodeModal_{{ s.id }}">
+                            <i class="fa-solid fa-code"></i> View
                         </button>
                     </div>
 
@@ -106,6 +107,70 @@
     </form>
 </div>
 
+<!-- Backtest Configuration Modal -->
+<div class="modal fade" id="backtestConfigModal" tabindex="-1" aria-hidden="true" style="color: black;">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Configure Backtest</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="backtestForm" action="/run_backtest" method="post">
+                    <input type="hidden" name="strategy_mode" value="ai">
+                    <input type="hidden" name="strategy_id" id="modalStratId">
+
+                    <div class="mb-3">
+                        <label class="form-label">Strategy</label>
+                        <input type="text" class="form-control" id="modalStratName" readonly>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Symbol</label>
+                        <select name="symbol" class="form-select">
+                            <option value="BTCUSDT">BTCUSDT</option>
+                            <option value="ETHUSDT">ETHUSDT</option>
+                            <option value="SOLUSDT">SOLUSDT</option>
+                            <option value="DOGEUSDT">DOGEUSDT</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Timeframe</label>
+                        <select name="interval" class="form-select">
+                            <option value="15">15 Minutes</option>
+                            <option value="60" selected>1 Hour</option>
+                            <option value="240">4 Hours</option>
+                            <option value="D">1 Day</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Initial Balance ($)</label>
+                        <input type="number" name="initial_balance" class="form-control" value="10000">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Date Range (Optional)</label>
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">Start</span>
+                            <input type="date" name="start_time" class="form-control">
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text">End</span>
+                            <input type="date" name="end_time" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-warning">Run Backtest</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function toggleSelectAll() {
     const checkboxes = document.querySelectorAll('input[name="strat_ids"]');
@@ -130,6 +195,12 @@ function runTournament() {
     const form = document.getElementById('bulkActionForm');
     form.action = "/strategies/tournament";
     form.submit();
+}
+
+function openBacktestModal(id, name) {
+    document.getElementById('modalStratId').value = id;
+    document.getElementById('modalStratName').value = name;
+    new bootstrap.Modal(document.getElementById('backtestConfigModal')).show();
 }
 </script>
 {% endblock %}

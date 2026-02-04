@@ -675,17 +675,30 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              res = bt.run_vectorized_backtest(recipe)
 
              # Save result
+             # Helper to replace NaN
+             def sanitize(obj):
+                 if isinstance(obj, float):
+                     if np.isnan(obj) or np.isinf(obj):
+                         return 0.0
+                 if isinstance(obj, dict):
+                     return {k: sanitize(v) for k, v in obj.items()}
+                 if isinstance(obj, list):
+                     return [sanitize(v) for v in obj]
+                 return obj
+
+             safe_res = sanitize(res)
+
              br = BacktestResult(
                 strategy_id=strat.id,
                 symbol="BTCUSDT",
                 start_date=str(df.iloc[0]['startTime']),
                 end_date=str(df.iloc[-1]['startTime']),
-                roi=res['roi_percent'],
-                sharpe=res['sharpe'],
-                max_drawdown=res['max_drawdown'],
-                win_rate=res['win_rate'],
-                trades_count=res['total_trades'],
-                metrics_json=json.dumps(res),
+                roi=safe_res.get('roi_percent', 0),
+                sharpe=safe_res.get('sharpe', 0),
+                max_drawdown=safe_res.get('max_drawdown', 0),
+                win_rate=safe_res.get('win_rate', 0),
+                trades_count=safe_res.get('total_trades', 0),
+                metrics_json=json.dumps(safe_res),
                 timestamp=time.time()
              )
              db.add(br)
