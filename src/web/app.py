@@ -415,11 +415,14 @@ async def run_backtest(
                  res = sanitize(res)
 
                  # Inject chart into response
-                 return [{
+                 response_data = [{
                     "params": {"name": strat.name},
                     "metrics": res,
                     "chart_json": chart_json
                 }]
+
+                 # Sanitize the entire response to catch any lingering numpy types in chart_json
+                 return sanitize(response_data)
 
             else:
                 # Legacy Code Exec
