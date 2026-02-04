@@ -66,6 +66,9 @@ class StrategyParser:
                      if result is not None:
                         df = pd.concat([df, result], axis=1)
 
+                # Debug: Log columns to trace missing indicators
+                log_sync(f"Added {ind.name}. Cols: {df.columns.tolist()}")
+
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
                 print(msg)
