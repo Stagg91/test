@@ -56,16 +56,18 @@ class StrategyParser:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
+                        # For DF results (MACD, BB), we IGNORE col_name prefixing.
+                        # The AI typically generates logic using standard library names (e.g. BBL_20_2.0).
+                        # TALib generates standard names (sanitized to BBL_20_2_0).
+                        # If we prefix, we break the match.
+                        # We rely on Logic Sanitization to map the AI's predicted name to TALib's actual name.
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
                         df = pd.concat([df, result], axis=1)
+
+                # Debug: Log columns to trace missing indicators
+                log_sync(f"Added {ind.name}. Cols: {df.columns.tolist()}")
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -74,8 +76,7 @@ class StrategyParser:
                 log_sync(msg)
 
         # 2. Sanitize Column Names (Fix potential dots)
-        # Custom TALib shouldn't produce dots, but safe to keep
-
+        # Custom TALib usually avoids dots now, but we double-check.
         rename_map = {}
         for col in df.columns:
             if "." in col:
@@ -86,12 +87,53 @@ class StrategyParser:
             df.rename(columns=rename_map, inplace=True)
 
         # 3. Sanitize Logic Strings
+        # Ensure logic strings match the underscore convention
         entry_logic = strategy.entry_logic
         exit_logic = strategy.exit_logic
 
+        # Apply renaming map (if columns changed)
         for old, new in rename_map.items():
             entry_logic = entry_logic.replace(old, new)
             exit_logic = exit_logic.replace(old, new)
+
+        # Also proactively replace any dots in the logic string itself
+        # This handles cases where AI writes "BBL_20_2.0" but TALib generated "BBL_20_2_0"
+        # and logic string wasn't updated because column name already matched the underscore version (or vice versa).
+        # We just assume dot is invalid in numexpr for identifiers.
+        # But we must be careful not to replace floats like "0.5".
+        # Regex replacement for identifiers containing dots?
+        # For now, simplistic approach: if column names have underscores, and logic has dots for those columns, replace.
+
+        # Better approach: Iterate all DataFrame columns. If logic contains a version of column with dots, replace it.
+        for col in df.columns:
+            # If col is "BBL_20_2_0"
+            # And logic contains "BBL_20_2.0"
+            # Replace it.
+            dot_version = col.replace("_", ".") # This might be ambiguous (BBL_20_2.0 vs BBL.20.2.0)
+            # Instead, let's look for common patterns the AI generates.
+            # AI generates "BBL_20_2.0". TALib generates "BBL_20_2_0".
+            # We want to replace "BBL_20_2.0" -> "BBL_20_2_0" in logic.
+
+            # Construct likely dot-variant from the clean column name
+            # Only if the clean column ends in digits
+            # Actually, simply replacing any token in logic that matches a column-with-dots pattern is safer.
+            pass
+
+        # Global sanitization of logic strings for known patterns
+        # AI often writes "BBL_20_2.0". We want "BBL_20_2_0".
+        # We can use regex to find identifiers with dots that are NOT simple floats.
+        import re
+        # Look for words that have letters, then underscores/numbers, then a dot, then numbers.
+        # e.g. BBL_20_2.0
+        def sanitize_logic_string(logic_str):
+            # Regex to find identifiers like "Text_Num.Num" and replace dot with underscore
+            # Pattern: [A-Za-z_]+[A-Za-z0-9_]*\.\d+
+            # But wait, simple floats like "0.5" match `\d+\.\d+`. We want to avoid those.
+            # We want identifiers that start with letters.
+            return re.sub(r'([A-Za-z_][A-Za-z0-9_]*)\.', r'\1_', logic_str)
+
+        entry_logic = sanitize_logic_string(entry_logic)
+        exit_logic = sanitize_logic_string(exit_logic)
 
         # 4. Evaluate Logic
         df['signal'] = 0

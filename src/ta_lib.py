@@ -8,6 +8,10 @@ class TALib:
     """
 
     @staticmethod
+    def _clean_name(name):
+        return str(name).replace(".", "_")
+
+    @staticmethod
     def sma(series: pd.Series, length: int) -> pd.Series:
         return series.rolling(window=length).mean()
 
@@ -36,11 +40,15 @@ class TALib:
         signal_line = TALib.ema(macd_line, signal)
         hist = macd_line - signal_line
 
-        # Match pandas_ta naming convention somewhat
+        # Avoid dots in names
+        s_fast = TALib._clean_name(fast)
+        s_slow = TALib._clean_name(slow)
+        s_signal = TALib._clean_name(signal)
+
         return pd.DataFrame({
-            f'MACD_{fast}_{slow}_{signal}': macd_line,
-            f'MACDs_{fast}_{slow}_{signal}': signal_line,
-            f'MACDh_{fast}_{slow}_{signal}': hist
+            f'MACD_{s_fast}_{s_slow}_{s_signal}': macd_line,
+            f'MACDs_{s_fast}_{s_slow}_{s_signal}': signal_line,
+            f'MACDh_{s_fast}_{s_slow}_{s_signal}': hist
         })
 
     @staticmethod
@@ -50,11 +58,14 @@ class TALib:
         upper = mid + std * sigma
         lower = mid - std * sigma
 
-        # Match pandas_ta naming (BBL, BBM, BBU)
+        # Avoid dots in names (e.g. 2.0 -> 2_0)
+        s_len = TALib._clean_name(length)
+        s_std = TALib._clean_name(std)
+
         return pd.DataFrame({
-            f'BBL_{length}_{std}': lower,
-            f'BBM_{length}_{std}': mid,
-            f'BBU_{length}_{std}': upper
+            f'BBL_{s_len}_{s_std}': lower,
+            f'BBM_{s_len}_{s_std}': mid,
+            f'BBU_{s_len}_{s_std}': upper
         })
 
     @staticmethod
@@ -93,8 +104,10 @@ class TALib:
         dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
         adx = dx.ewm(alpha=alpha, adjust=False).mean()
 
+        s_len = TALib._clean_name(length)
+
         return pd.DataFrame({
-            f'ADX_{length}': adx,
-            f'DMP_{length}': plus_di,
-            f'DMN_{length}': minus_di
+            f'ADX_{s_len}': adx,
+            f'DMP_{s_len}': plus_di,
+            f'DMN_{s_len}': minus_di
         })

@@ -487,6 +487,88 @@ async def deactivate_strategy(strat_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse("/strategies", status_code=303)
 
+@app.post("/strategies/bulk_delete")
+async def bulk_delete_strategies(request: Request, strat_ids: list[int] = Form(...), db: Session = Depends(get_db)):
+    if not strat_ids:
+        return RedirectResponse("/strategies", status_code=303)
+
+    db.query(Strategy).filter(Strategy.id.in_(strat_ids)).delete(synchronize_session=False)
+    db.commit()
+    await LabLogger.log("DB", f"Deleted {len(strat_ids)} strategies.")
+
+    return RedirectResponse("/strategies", status_code=303)
+
+@app.post("/strategies/tournament")
+async def strategies_tournament(request: Request, strat_ids: list[int] = Form(...), db: Session = Depends(get_db)):
+    if not strat_ids or len(strat_ids) < 2:
+        return RedirectResponse("/strategies", status_code=303)
+
+    await LabLogger.log("BACKTEST", f"Starting Tournament with {len(strat_ids)} strategies...")
+
+    # 1. Fetch Data Once (Efficiency)
+    symbol = "BTCUSDT"
+    interval = "60"
+    de = DataEngine()
+    df = de.fetch_ohlcv(symbol, interval=interval, limit=1000)
+
+    if df.empty:
+        await LabLogger.log("BACKTEST", "Tournament failed: No data.")
+        return RedirectResponse("/strategies", status_code=303)
+
+    # 2. Run Backtests
+    results = []
+
+    # Pre-calculate indicators?
+    # Different strategies might use different indicators, so we can't easily pre-calc all.
+    # But we could reuse the base DF.
+
+    from src.backtester import Backtester
+
+    for sid in strat_ids:
+        strat = db.query(Strategy).filter(Strategy.id == sid).first()
+        if not strat or not strat.content_json:
+            continue
+
+        try:
+            recipe = StrategyRecipe(**strat.content_json)
+            bt = Backtester(df, initial_balance=10000)
+            res = bt.run_vectorized_backtest(recipe)
+
+            if "error" not in res:
+                results.append({
+                    "id": strat.id,
+                    "name": strat.name,
+                    "roi": res['roi_percent'],
+                    "sharpe": res['sharpe'],
+                    "trades": res['total_trades'],
+                    "dd": res['max_drawdown']
+                })
+                # Save result to DB?
+                # Yes, helpful for history.
+                br = BacktestResult(
+                    strategy_id=strat.id,
+                    symbol=symbol,
+                    start_date=str(df.iloc[0]['startTime']),
+                    end_date=str(df.iloc[-1]['startTime']),
+                    roi=res['roi_percent'],
+                    sharpe=res['sharpe'],
+                    max_drawdown=res['max_drawdown'],
+                    win_rate=res['win_rate'],
+                    trades_count=res['total_trades'],
+                    metrics_json=json.dumps(res),
+                    timestamp=time.time()
+                )
+                db.add(br)
+        except Exception as e:
+            print(f"Tournament Error on Strat {sid}: {e}")
+
+    db.commit()
+
+    # Sort by Sharpe Ratio
+    results.sort(key=lambda x: x['sharpe'], reverse=True)
+
+    return templates.TemplateResponse("tournament.html", {"request": request, "results": results})
+
 @app.get("/evolution", response_class=HTMLResponse)
 async def evolution_page(request: Request, db: Session = Depends(get_db)):
     # Get Generation Stats
@@ -593,17 +675,30 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              res = bt.run_vectorized_backtest(recipe)
 
              # Save result
+             # Helper to replace NaN
+             def sanitize(obj):
+                 if isinstance(obj, float):
+                     if np.isnan(obj) or np.isinf(obj):
+                         return 0.0
+                 if isinstance(obj, dict):
+                     return {k: sanitize(v) for k, v in obj.items()}
+                 if isinstance(obj, list):
+                     return [sanitize(v) for v in obj]
+                 return obj
+
+             safe_res = sanitize(res)
+
              br = BacktestResult(
                 strategy_id=strat.id,
                 symbol="BTCUSDT",
                 start_date=str(df.iloc[0]['startTime']),
                 end_date=str(df.iloc[-1]['startTime']),
-                roi=res['roi_percent'],
-                sharpe=res['sharpe'],
-                max_drawdown=res['max_drawdown'],
-                win_rate=res['win_rate'],
-                trades_count=res['total_trades'],
-                metrics_json=json.dumps(res),
+                roi=safe_res.get('roi_percent', 0),
+                sharpe=safe_res.get('sharpe', 0),
+                max_drawdown=safe_res.get('max_drawdown', 0),
+                win_rate=safe_res.get('win_rate', 0),
+                trades_count=safe_res.get('total_trades', 0),
+                metrics_json=json.dumps(safe_res),
                 timestamp=time.time()
              )
              db.add(br)
