@@ -272,7 +272,23 @@ class StartupLogger:
 def start_server(start_port=8000):
     uvicorn.run(app, host="0.0.0.0", port=start_port, log_level="info")
 
+def start_gui(url):
+    try:
+        import webview
+        webview.create_window("Staggs Hectic Trader", url, width=1200, height=800)
+        webview.start()
+    except ImportError:
+        print("PyWebView not installed (GUI mode unavailable). Opening system browser...")
+        import webbrowser
+        webbrowser.open(url)
+        # Keep process alive since webview.start() blocks but browser.open() doesn't
+        while True:
+             time.sleep(1)
+
 def main():
+    # Handle GUI flag
+    use_gui = "--gui" in sys.argv
+
     sys.stdout = StartupLogger(sys.stdout, LOG_FILE)
     sys.stderr = StartupLogger(sys.stderr, LOG_FILE)
     print(f"--- LOGGING STARTED at {time.ctime()} ---")
@@ -304,7 +320,15 @@ def main():
         dd = DataDownloader()
         dd.start_sync()
 
-        start_server()
+        if use_gui:
+            # Run server in thread
+            server_thread = threading.Thread(target=start_server, args=(8000,), daemon=True)
+            server_thread.start()
+            # Start GUI (blocking)
+            time.sleep(2) # Give server time to boot
+            start_gui("http://localhost:8000")
+        else:
+            start_server()
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")

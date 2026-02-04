@@ -19,7 +19,6 @@ bcrypt==3.2.2
 pyjwt
 qrcode
 pillow
-pywebview
 pyinstaller
 pystray
 feedparser
