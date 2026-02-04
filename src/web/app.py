@@ -36,6 +36,20 @@ init_db()
 
 app = FastAPI()
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    err_msg = f"Global Error: {str(exc)}"
+    print(err_msg)
+    traceback.print_exc()
+
+    # Log to UI
+    await LabLogger.log("SYSTEM", f"Critical Error in {request.url.path}: {str(exc)}")
+
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "detail": str(exc)}
+    )
+
 @app.on_event("startup")
 async def startup_event():
     import asyncio

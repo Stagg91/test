@@ -190,9 +190,19 @@ async function runBacktest() {
             body: formData
         });
 
-        if (!response.ok) throw new Error("Backtest failed");
+        // Handle JSON response even if status is error (due to our Exception Handler)
+        let results;
+        try {
+            results = await response.json();
+        } catch (jsonErr) {
+            throw new Error(`Server returned invalid JSON: ${response.statusText}`);
+        }
 
-        const results = await response.json();
+        if (!response.ok) {
+            // Display detail from Exception Handler
+            const msg = results.detail || results.error || "Unknown Server Error";
+            throw new Error(msg);
+        }
 
         if (results.error) {
             tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">${results.error}</td></tr>`;
