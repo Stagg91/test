@@ -1,5 +1,5 @@
-import pandas_ta as ta
 import pandas as pd
+from src.ta_lib import TALib
 
 class IndicatorEngine:
     @staticmethod
@@ -12,24 +12,21 @@ class IndicatorEngine:
 
         # MACD
         # Default: fast=12, slow=26, signal=9
-        macd = df.ta.macd(fast=12, slow=26, signal=9)
+        macd = TALib.macd(df['close'], fast=12, slow=26, signal=9)
         df = pd.concat([df, macd], axis=1)
 
         # RSI
         # Default: length=14
-        df['RSI_14'] = df.ta.rsi(length=14)
+        df['RSI_14'] = TALib.rsi(df['close'], length=14)
 
         # Bollinger Bands
         # Default: length=20, std=2
-        bbands = df.ta.bbands(length=20, std=2)
+        bbands = TALib.bbands(df['close'], length=20, std=2)
         df = pd.concat([df, bbands], axis=1)
 
-        # Ichimoku Cloud
-        # Default: tenkan=9, kijun=26, senkou=52
-        ichimoku = df.ta.ichimoku(tenkan=9, kijun=26, senkou=52)
-        # ichimoku returns a tuple (frame, span), we usually want the frame
-        if ichimoku:
-            df = pd.concat([df, ichimoku[0]], axis=1)
+        # Ichimoku Cloud - NOT YET IMPLEMENTED IN TA_LIB
+        # Keeping placeholders or removing.
+        # Removing for now to avoid crashes.
 
         return df
 
@@ -38,11 +35,25 @@ class IndicatorEngine:
         """
         Dynamically adds an indicator based on name.
         """
-        if not hasattr(df.ta, indicator_name):
-            print(f"Indicator {indicator_name} not found in pandas_ta")
+        if not hasattr(TALib, indicator_name):
+            print(f"Indicator {indicator_name} not found in TALib")
             return df
 
-        method = getattr(df.ta, indicator_name)
-        result = method(**kwargs)
-        df = pd.concat([df, result], axis=1)
+        method = getattr(TALib, indicator_name)
+
+        # Dispatch based on known signatures or try/catch
+        try:
+            if indicator_name in ['atr', 'adx']:
+                result = method(df['high'], df['low'], df['close'], **kwargs)
+            else:
+                result = method(df['close'], **kwargs)
+
+            if isinstance(result, pd.Series):
+                df[indicator_name] = result
+            elif isinstance(result, pd.DataFrame):
+                df = pd.concat([df, result], axis=1)
+
+        except Exception as e:
+            print(f"Error adding custom indicator {indicator_name}: {e}")
+
         return df

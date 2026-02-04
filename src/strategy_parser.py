@@ -1,9 +1,9 @@
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 import traceback
 from src.strategies.schemas import StrategyRecipe
 from src.logger import LabLogger
+from src.ta_lib import TALib
 import asyncio
 
 class StrategyParser:
@@ -27,20 +27,41 @@ class StrategyParser:
         # 1. Apply Indicators
         for ind in strategy.indicators:
             try:
-                if not hasattr(df.ta, ind.name):
-                    msg = f"Indicator '{ind.name}' not found in pandas_ta library."
+                if not hasattr(TALib, ind.name):
+                    msg = f"Indicator '{ind.name}' not found in TALib."
                     print(f"Warning: {msg}")
                     log_sync(msg)
                     continue
 
-                # Call the indicator function
-                result = df.ta(kind=ind.name, **ind.params)
+                # Call the indicator function from TALib
+                method = getattr(TALib, ind.name)
+
+                # Check signature to see if it needs OHLC or just Close
+                # Simplified: pass kwargs + series/ohlc based on name
+                # Most indicators take 'close' (series)
+                params = ind.params.copy()
+
+                if ind.name in ['atr', 'adx']:
+                    # These need high, low, close
+                    result = method(df['high'], df['low'], df['close'], **params)
+                else:
+                    # Assume single series (usually close)
+                    # Some might need 'volume' later, but for now mostly close
+                    target = df['close']
+                    # If params specifies source column? Not supported yet.
+                    result = method(target, **params)
 
                 # Explicit renaming:
                 if ind.col_name:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
+                        # For DF results (MACD, BB), we might want to rename specific columns?
+                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
+                        # Usually col_name is used for single series.
+                        # If DF, we ignore col_name or prefix it?
+                        # Let's prefix
+                        result = result.add_prefix(f"{ind.col_name}_")
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
@@ -52,9 +73,8 @@ class StrategyParser:
                 traceback.print_exc()
                 log_sync(msg)
 
-        # 2. Sanitize Column Names (Fix pandas_ta dots)
-        # pandas_ta often creates columns like "BBU_20_2.0".
-        # The dot confuses pandas.eval(). We replace it with "_".
+        # 2. Sanitize Column Names (Fix potential dots)
+        # Custom TALib shouldn't produce dots, but safe to keep
 
         rename_map = {}
         for col in df.columns:
