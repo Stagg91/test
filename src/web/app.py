@@ -675,14 +675,19 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              res = bt.run_vectorized_backtest(recipe)
 
              # Save result
-             # Helper to replace NaN
+             # Helper to replace NaN and Numpy types
              def sanitize(obj):
-                 if isinstance(obj, float):
+                 if isinstance(obj, (np.integer, int)):
+                     return int(obj)
+                 elif isinstance(obj, (np.floating, float)):
                      if np.isnan(obj) or np.isinf(obj):
                          return 0.0
-                 if isinstance(obj, dict):
+                     return float(obj)
+                 elif isinstance(obj, np.ndarray):
+                     return sanitize(obj.tolist())
+                 elif isinstance(obj, dict):
                      return {k: sanitize(v) for k, v in obj.items()}
-                 if isinstance(obj, list):
+                 elif isinstance(obj, list):
                      return [sanitize(v) for v in obj]
                  return obj
 
