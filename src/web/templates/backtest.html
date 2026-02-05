@@ -190,7 +190,12 @@ window.onload = function() {
         // Set values
         document.getElementById('strategyMode').value = 'ai';
         const select = document.querySelector('select[name="strategy_id"]');
-        if (select) select.value = strategyId;
+        if (select) {
+            select.value = strategyId;
+            // Auto-run if strategy is selected
+            // Use a slight delay to ensure tab switch completes
+            setTimeout(runBacktest, 500);
+        }
     }
 };
 

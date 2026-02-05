@@ -16,49 +16,41 @@ class ChartGenerator:
         # For simplicity, let's do: Row 1 Main (Price), Row 2 Volume.
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                            vertical_spacing=0.03, subplot_titles=('Price & Indicators', 'Volume'),
-                            row_heights=[0.7, 0.3])
+                            vertical_spacing=0.02, subplot_titles=('Price & Indicators', 'Volume'),
+                            row_heights=[0.8, 0.2]) # Optimize space
 
-        # Candlestick
+        # Candlestick (Green/Red styling)
         fig.add_trace(go.Candlestick(
             x=df['startTime'],
             open=df['open'],
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name='OHLC'
+            name='OHLC',
+            increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
+            decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
         ), row=1, col=1)
 
         # Indicators
-        colors = ['blue', 'orange', 'purple', 'cyan', 'magenta']
+        # Distinct Colors for visibility
+        colors = ['#FFD700', '#00BFFF', '#FF4500', '#32CD32', '#DA70D6']
+
         if indicators:
             for i, ind in enumerate(indicators):
                 if ind in df.columns:
-                    # Check if it's an overlay (like SMA) or separate (like RSI)
-                    # Simple heuristic: If values are close to price, overlay. If 0-100, separate?
-                    # For MVP, we overlay everything on Row 1 or 2?
-                    # If we don't know, we can assume overlay for Moving Averages/Bands, separate for Oscillators.
-                    # But the requirement says "overlay the indicators".
-                    # Let's check name.
-                    is_oscillator = any(x in ind.lower() for x in ['rsi', 'macd', 'stoch', 'adx'])
+                    is_oscillator = any(x in ind.lower() for x in ['rsi', 'macd', 'stoch', 'adx', 'atr'])
 
-                    if is_oscillator:
-                        # Add a 3rd row dynamically? Or just put in main for now with secondary axis?
-                        # Let's stick to overlaying purely price-based ones (SMA, EMA, BB)
-                        if not is_oscillator:
-                            fig.add_trace(go.Scatter(
-                                x=df['startTime'],
-                                y=df[ind],
-                                line=dict(color=colors[i % len(colors)], width=1),
-                                name=ind
-                            ), row=1, col=1)
-                    else:
-                        # SMA, EMA, BB
+                    # Logic: Overlay Price indicators (EMA, SMA, BB) on Row 1.
+                    # Ignore Oscillators for now to avoid cluttering price view (user asked for clear visuals).
+                    # OR, we could add a 3rd subplot, but simpler is cleaner.
+
+                    if not is_oscillator:
                         fig.add_trace(go.Scatter(
                             x=df['startTime'],
                             y=df[ind],
-                            line=dict(color=colors[i % len(colors)], width=1),
-                            name=ind
+                            line=dict(color=colors[i % len(colors)], width=1.5),
+                            name=ind,
+                            opacity=0.8
                         ), row=1, col=1)
 
         # Trades (Markers)
@@ -88,19 +80,23 @@ class ChartGenerator:
                 ), row=1, col=1)
 
         # Volume
+        # Color volume bars based on close vs open?
+        # Simple implementation:
         fig.add_trace(go.Bar(
             x=df['startTime'],
             y=df['volume'],
             name='Volume',
-            marker_color='grey'
+            marker_color='#787b86',
+            opacity=0.5
         ), row=2, col=1)
 
         # Layout
         fig.update_layout(
             xaxis_rangeslider_visible=False,
             template='plotly_dark',
-            height=800,
-            margin=dict(l=50, r=50, t=50, b=50)
+            height=600, # slightly shorter to fit screens
+            margin=dict(l=20, r=20, t=40, b=20),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
 
         # Convert to JSON

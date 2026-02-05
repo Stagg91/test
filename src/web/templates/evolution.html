@@ -2,51 +2,142 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Genetic Evolution Engine</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fa-solid fa-dna text-info"></i> Genetic Evolution & History</h2>
+        <a href="/strategies" class="btn btn-secondary">Strategy Library</a>
+    </div>
 
-    <div class="card mb-4">
-        <div class="card-header">Evolve Generation</div>
+    <!-- Evolution Control -->
+    <div class="card mb-4 bg-dark border-secondary">
+        <div class="card-header border-secondary text-gold">
+            <i class="fa-solid fa-microchip"></i> Evolution Control
+        </div>
         <div class="card-body">
-            <p>Select a generation to evaluate and breed from. This will run backtests on all strategies in that generation, select the best ones, and use AI to mutate them into the next generation.</p>
-            <form action="/evolution/run_generation" method="post">
-                <div class="mb-3">
-                    <label>Generation ID</label>
-                    <input type="number" name="generation" class="form-control" value="0">
+            <p class="text-muted">Manually trigger an evolution cycle to evaluate current strategies and breed new variants.</p>
+            <form action="/evolution/run_generation" method="post" class="d-flex align-items-center gap-3">
+                <div class="input-group" style="max-width: 200px;">
+                    <span class="input-group-text bg-dark border-secondary text-muted">Gen ID</span>
+                    <input type="number" name="generation" class="form-control bg-dark text-white border-secondary" value="0">
                 </div>
-                <button type="submit" class="btn btn-warning">Run Evolution Cycle</button>
+                <button type="submit" class="btn btn-warning"><i class="fa-solid fa-play"></i> Run Cycle</button>
             </form>
         </div>
     </div>
 
-    <h3>Performance Matrix (Top 50)</h3>
-    <table class="table table-striped table-sm">
-        <thead>
-            <tr>
-                <th>Strat ID</th>
-                <th>Name</th>
-                <th>Gen</th>
-                <th>ROI %</th>
-                <th>Sharpe</th>
-                <th>Max DD %</th>
-                <th>Win Rate %</th>
-                <th>Trades</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for res, strat in results %}
-            <tr>
-                <td>{{ strat.id }}</td>
-                <td>{{ strat.name }}</td>
-                <td>{{ strat.generation }}</td>
-                <td class="{% if res.roi > 0 %}text-success{% else %}text-danger{% endif %}">{{ "%.2f"|format(res.roi) }}</td>
-                <td>{{ "%.2f"|format(res.sharpe) }}</td>
-                <td>{{ "%.2f"|format(res.max_drawdown) }}</td>
-                <td>{{ "%.2f"|format(res.win_rate) }}</td>
-                <td>{{ res.trades_count }}</td>
-                <td><a href="/backtest/result/{{ res.id }}" class="btn btn-sm btn-primary">Details</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <!-- Backtest History Table -->
+    <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+            <span class="text-gold"><i class="fa-solid fa-list-ol"></i> Backtest Optimization History</span>
+            <input type="text" id="searchInput" onkeyup="searchTable()" class="form-control form-control-sm bg-dark text-white border-secondary" style="width: 200px;" placeholder="Search Strategy...">
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-striped mb-0" id="historyTable">
+                    <thead>
+                        <tr class="text-muted small text-uppercase">
+                            <th style="cursor:pointer" onclick="sortTable(0)">Date <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(1)">Strategy <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(2)">Symbol <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(3)">ROI % <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(4)">Sharpe <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(5)">Max DD % <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(6)">Win Rate % <i class="fa-solid fa-sort"></i></th>
+                            <th style="cursor:pointer" onclick="sortTable(7)">Trades <i class="fa-solid fa-sort"></i></th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for res, strat in results %}
+                        <tr>
+                            <td class="text-muted small">
+                                <!-- Timestamp conversion would be ideal here -->
+                                {{ res.id }}
+                            </td>
+                            <td class="fw-bold text-info">{{ strat.name }}</td>
+                            <td><span class="badge bg-secondary">{{ res.symbol }}</span></td>
+                            <td class="fw-bold {% if res.roi > 0 %}text-success{% else %}text-danger{% endif %}">{{ "%.2f"|format(res.roi) }}%</td>
+                            <td>{{ "%.2f"|format(res.sharpe) }}</td>
+                            <td class="text-danger">{{ "%.2f"|format(res.max_drawdown) }}%</td>
+                            <td>{{ "%.2f"|format(res.win_rate) }}%</td>
+                            <td>{{ res.trades_count }}</td>
+                            <td>
+                                <a href="/backtest/result/{{ res.id }}" class="btn btn-sm btn-outline-primary" title="View Charts">
+                                    <i class="fa-solid fa-chart-line"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script>
+function sortTable(n) {
+  var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+  table = document.getElementById("historyTable");
+  switching = true;
+  dir = "asc";
+  while (switching) {
+    switching = false;
+    rows = table.rows;
+    for (i = 1; i < (rows.length - 1); i++) {
+      shouldSwitch = false;
+      x = rows[i].getElementsByTagName("TD")[n];
+      y = rows[i + 1].getElementsByTagName("TD")[n];
+      var xContent = x.innerText.replace('%', '').replace(',', '');
+      var yContent = y.innerText.replace('%', '').replace(',', '');
+
+      // Check if numeric
+      var xNum = parseFloat(xContent);
+      var yNum = parseFloat(yContent);
+
+      if (!isNaN(xNum) && !isNaN(yNum)) {
+          if (dir == "asc") {
+            if (xNum > yNum) { shouldSwitch = true; break; }
+          } else if (dir == "desc") {
+            if (xNum < yNum) { shouldSwitch = true; break; }
+          }
+      } else {
+          if (dir == "asc") {
+            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) { shouldSwitch = true; break; }
+          } else if (dir == "desc") {
+            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) { shouldSwitch = true; break; }
+          }
+      }
+    }
+    if (shouldSwitch) {
+      rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+      switching = true;
+      switchcount ++;
+    } else {
+      if (switchcount == 0 && dir == "asc") {
+        dir = "desc";
+        switching = true;
+      }
+    }
+  }
+}
+
+function searchTable() {
+  var input, filter, table, tr, td, i, txtValue;
+  input = document.getElementById("searchInput");
+  filter = input.value.toUpperCase();
+  table = document.getElementById("historyTable");
+  tr = table.getElementsByTagName("tr");
+  for (i = 0; i < tr.length; i++) {
+    td = tr[i].getElementsByTagName("td")[1]; // Search Strategy Name column
+    if (td) {
+      txtValue = td.textContent || td.innerText;
+      if (txtValue.toUpperCase().indexOf(filter) > -1) {
+        tr[i].style.display = "";
+      } else {
+        tr[i].style.display = "none";
+      }
+    }
+  }
+}
+</script>
 {% endblock %}
