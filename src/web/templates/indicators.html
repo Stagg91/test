@@ -68,7 +68,7 @@ async function viewSource(name) {
     try {
         const response = await fetch(`/api/indicators/source/${name}`);
         const data = await response.json();
-        document.getElementById('sourceCode').innerText = data.source;
+        document.getElementById('sourceCode').innerText = data.source || "No source code available.";
     } catch(e) {
         document.getElementById('sourceCode').innerText = "Error loading source.";
     }

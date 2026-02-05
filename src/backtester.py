@@ -53,7 +53,9 @@ class Backtester:
             df['equity'] = self.initial_balance * (1 + df['strategy_return']).cumprod()
 
             # Metrics
-            total_return = (df['equity'].iloc[-1] - self.initial_balance) / self.initial_balance * 100
+            final_balance = df['equity'].iloc[-1]
+            total_pnl = final_balance - self.initial_balance
+            total_return = (total_pnl / self.initial_balance) * 100
 
             cum_max = df['equity'].cummax()
             drawdown = (df['equity'] - cum_max) / cum_max
@@ -85,6 +87,8 @@ class Backtester:
             fitness = total_return / dd_abs
 
             return {
+                "total_pnl": total_pnl,
+                "final_balance": final_balance,
                 "roi_percent": total_return,
                 "max_drawdown": max_drawdown,
                 "sharpe": sharpe,

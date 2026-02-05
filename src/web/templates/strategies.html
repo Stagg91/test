@@ -96,10 +96,9 @@
                         </form>
                         {% endif %}
 
-                        <button type="button" class="btn btn-sm btn-outline-warning ms-1"
-                                onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">
+                        <a href="/backtest?strategy_id={{ s.id }}&mode=ai" class="btn btn-sm btn-outline-warning ms-1">
                             <i class="fa-solid fa-play"></i> Backtest
-                        </button>
+                        </a>
 
                         <button type="button" class="btn btn-sm btn-outline-info ms-1" data-bs-toggle="modal" data-bs-target="#viewCodeModal_{{ s.id }}">
                             <i class="fa-solid fa-code"></i> View
