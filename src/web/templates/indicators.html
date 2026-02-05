@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fa-solid fa-book text-warning"></i> Indicator Library</h2>
+        <a href="/lab" class="btn btn-secondary">Strategy Lab</a>
+    </div>
+
+    <div class="card bg-dark border-secondary">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover table-striped mb-0">
+                    <thead>
+                        <tr class="text-warning">
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Default Parameters</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ind in indicators %}
+                        <tr>
+                            <td class="fw-bold text-info">{{ ind.name }}</td>
+                            <td class="small text-muted">{{ ind.doc }}</td>
+                            <td>
+                                {% for p in ind.params %}
+                                <span class="badge bg-secondary">{{ p.name }}={{ p.default }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-light" onclick="viewSource('{{ ind.name }}')">
+                                    <i class="fa-solid fa-code"></i> Code
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Source Modal -->
+<div class="modal fade" id="sourceModal" tabindex="-1" aria-hidden="true" style="color: black;">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Source Code: <span id="sourceTitle"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="sourceCode" class="language-python" style="background: #f8f9fa; display: block; padding: 10px;">Loading...</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function viewSource(name) {
+    document.getElementById('sourceTitle').innerText = name;
+    document.getElementById('sourceCode').innerText = "Loading...";
+    const modal = new bootstrap.Modal(document.getElementById('sourceModal'));
+    modal.show();
+
+    try {
+        const response = await fetch(`/api/indicators/source/${name}`);
+        const data = await response.json();
+        document.getElementById('sourceCode').innerText = data.source;
+    } catch(e) {
+        document.getElementById('sourceCode').innerText = "Error loading source.";
+    }
+}
+</script>
+{% endblock %}

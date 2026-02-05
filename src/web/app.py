@@ -25,6 +25,7 @@ from src.ai_sentiment import AISentimentAgent
 from src.auth import verify_password, get_password_hash, create_access_token, decode_token, create_magic_token
 from src.notifications import NotificationManager
 from src.utils import get_resource_path
+from src.library_manager import LibraryManager
 import qrcode
 import io
 import base64
@@ -472,14 +473,49 @@ async def generate_strategies(
     request: Request,
     prompt: str = Form("Robust trend following strategy"),
     count: int = Form(3),
+    include_best: bool = Form(False),
+    indicators: list[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    await LabLogger.log("AI", f"Requesting Generation: {prompt}", {"count": count})
+    await LabLogger.log("AI", f"Requesting Generation: {prompt}", {
+        "count": count, "include_best": include_best, "indicators": indicators
+    })
+
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
 
+    # Fetch Top Strategies if requested
+    best_examples = []
+    if include_best:
+        top_strats = db.query(BacktestResult, Strategy)\
+            .join(Strategy, BacktestResult.strategy_id == Strategy.id)\
+            .filter(Strategy.content_json.isnot(None))\
+            .order_by(BacktestResult.sharpe.desc()).limit(3).all()
+
+        for br, s in top_strats:
+            best_examples.append(f"Name: {s.name}, Logic: {s.content_json['entry_logic']} (Sharpe: {br.sharpe:.2f})")
+
+    # Fetch Indicator Definitions if selected
+    indicator_context = []
+    if indicators:
+        for ind_name in indicators:
+            src = LibraryManager.get_source_code(ind_name)
+            # Just send the signature/docstring to save tokens, or simplified info
+            # For now, let's just list them as "Available Tools"
+            indicator_context.append(ind_name)
+
     breeder = GeneticBreeder(gemini_api_key=key)
-    new_strats = await breeder.create_generation_zero(prompt=prompt, count=count)
+
+    # Pass extra context to breeder (requires update to GeneticBreeder)
+    # We will append it to the prompt text for now as a simple integration
+    full_prompt = prompt
+    if indicator_context:
+        full_prompt += f"\n\nPrefer using these indicators: {', '.join(indicator_context)}."
+
+    if best_examples:
+        full_prompt += "\n\nLearn from these top performing strategies logic:\n" + "\n".join(best_examples)
+
+    new_strats = await breeder.create_generation_zero(prompt=full_prompt, count=count)
 
     await LabLogger.log("API", f"Generated {len(new_strats)} strategies.")
 
@@ -906,3 +942,17 @@ async def lab_page(request: Request, db: Session = Depends(get_db)):
         "max_gen": max_gen,
         "best_strat": best_strat
     })
+
+@app.get("/indicators", response_class=HTMLResponse)
+async def indicators_page(request: Request):
+    indicators = LibraryManager.get_available_indicators()
+    return templates.TemplateResponse("indicators.html", {"request": request, "indicators": indicators})
+
+@app.get("/api/indicators/source/{name}")
+async def get_indicator_source(name: str):
+    source = LibraryManager.get_source_code(name)
+    return {"source": source}
+
+@app.get("/api/indicators")
+async def get_indicators_json():
+    return LibraryManager.get_available_indicators()
