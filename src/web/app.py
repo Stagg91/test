@@ -694,6 +694,8 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              # Save result
              # Helper to replace NaN and Numpy types
              def sanitize(obj):
+                 if obj is None:
+                     return None
                  if isinstance(obj, (np.integer, int)):
                      return int(obj)
                  elif isinstance(obj, (np.floating, float)):
@@ -704,8 +706,10 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
                      return sanitize(obj.tolist())
                  elif isinstance(obj, dict):
                      return {k: sanitize(v) for k, v in obj.items()}
-                 elif isinstance(obj, list):
+                 elif isinstance(obj, (list, tuple)):
                      return [sanitize(v) for v in obj]
+                 elif hasattr(obj, 'to_dict'): # Handle Pandas objects / Custom models
+                     return sanitize(obj.to_dict())
                  return obj
 
              safe_res = sanitize(res)

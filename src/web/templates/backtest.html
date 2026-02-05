@@ -177,6 +177,23 @@ function setMode(mode) {
     document.getElementById('strategyMode').value = mode;
 }
 
+// Auto-fill from URL params
+window.onload = function() {
+    const params = new URLSearchParams(window.location.search);
+    const strategyId = params.get('strategy_id');
+    const mode = params.get('mode');
+
+    if (strategyId && mode === 'ai') {
+        // Switch tab
+        const tabTrigger = new bootstrap.Tab(document.getElementById('pills-ai-tab'));
+        tabTrigger.show();
+        // Set values
+        document.getElementById('strategyMode').value = 'ai';
+        const select = document.querySelector('select[name="strategy_id"]');
+        if (select) select.value = strategyId;
+    }
+};
+
 async function runBacktest() {
     const form = document.getElementById('backtestForm');
     const formData = new FormData(form);
