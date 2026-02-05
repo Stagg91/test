@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/app/main.py", line 1, in <module>
+    import uvicorn
+ModuleNotFoundError: No module named 'uvicorn'
