@@ -3,7 +3,7 @@ import numpy as np
 import traceback
 from src.strategies.schemas import StrategyRecipe
 from src.logger import LabLogger
-from src.ta_lib import TALib
+from src.indicators import IndicatorEngine
 import asyncio
 
 class StrategyParser:
@@ -24,48 +24,46 @@ class StrategyParser:
         # Work on a copy
         df = df.copy()
 
-        # 1. Apply Indicators
+        # 1. Apply Indicators (Dynamically from DB)
         for ind in strategy.indicators:
             try:
-                if not hasattr(TALib, ind.name):
-                    msg = f"Indicator '{ind.name}' not found in TALib."
-                    print(f"Warning: {msg}")
-                    log_sync(msg)
-                    continue
+                # Use IndicatorEngine (loads code from DB)
+                # If col_name is provided, we might need to rename the output?
+                # IndicatorEngine generates names like NAME_PARAM1_PARAM2
+                # But the strategy might expect specific names if user defined them.
+                # However, the user-defined strategy usually just lists indicators.
+                # If the strategy JSON has 'col_name', we should respect it?
+                # The current StrategyRecipe schema has col_name.
 
-                # Call the indicator function from TALib
-                method = getattr(TALib, ind.name)
-
-                # Check signature to see if it needs OHLC or just Close
-                # Simplified: pass kwargs + series/ohlc based on name
-                # Most indicators take 'close' (series)
+                # Execute Indicator
                 params = ind.params.copy()
 
-                if ind.name in ['atr', 'adx']:
-                    # These need high, low, close
-                    result = method(df['high'], df['low'], df['close'], **params)
-                else:
-                    # Assume single series (usually close)
-                    # Some might need 'volume' later, but for now mostly close
-                    target = df['close']
-                    # If params specifies source column? Not supported yet.
-                    result = method(target, **params)
+                # We need to capture the columns added by this specific call to rename them if needed
+                cols_before = set(df.columns)
+                df = IndicatorEngine.add_custom_indicator(df, ind.name, **params)
+                cols_after = set(df.columns)
+                new_cols = cols_after - cols_before
 
-                # Explicit renaming:
+                if not new_cols:
+                    log_sync(f"Warning: Indicator {ind.name} added no new columns.")
+                    continue
+
+                # Handle Renaming if col_name is specified
                 if ind.col_name:
-                    if isinstance(result, pd.Series):
-                        df[ind.col_name] = result
-                    elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
-                        df = pd.concat([df, result], axis=1)
-                else:
-                     if result is not None:
-                        df = pd.concat([df, result], axis=1)
+                    # If multiple columns returned (e.g. BBands), we can't just rename to one name.
+                    # If single column, rename it.
+                    if len(new_cols) == 1:
+                        old_col = list(new_cols)[0]
+                        df.rename(columns={old_col: ind.col_name}, inplace=True)
+                    else:
+                        # For multi-column, maybe prefix?
+                        # Or if the user expects specific names like BBU_20_2.0
+                        # The engine generates predictable names.
+                        # If the strategy uses specific names in logic, we need to match them.
+                        pass
+
+                # Log success
+                # log_sync(f"Added {ind.name}. Cols: {list(new_cols)}")
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -74,8 +72,6 @@ class StrategyParser:
                 log_sync(msg)
 
         # 2. Sanitize Column Names (Fix potential dots)
-        # Custom TALib shouldn't produce dots, but safe to keep
-
         rename_map = {}
         for col in df.columns:
             if "." in col:
@@ -84,11 +80,13 @@ class StrategyParser:
 
         if rename_map:
             df.rename(columns=rename_map, inplace=True)
+            # log_sync(f"Sanitized columns: {rename_map}")
 
         # 3. Sanitize Logic Strings
         entry_logic = strategy.entry_logic
         exit_logic = strategy.exit_logic
 
+        # Replace dot-containing column names in logic strings with underscores
         for old, new in rename_map.items():
             entry_logic = entry_logic.replace(old, new)
             exit_logic = exit_logic.replace(old, new)
@@ -97,8 +95,23 @@ class StrategyParser:
         df['signal'] = 0
 
         try:
-            entry_mask = df.eval(entry_logic)
-            exit_mask = df.eval(exit_logic)
+            # Check if logic strings are empty
+            if not entry_logic or not exit_logic:
+                 log_sync("Error: Empty logic strings.")
+                 return df
+
+            # Use python engine for safer evaluation if numexpr fails?
+            # numexpr is default and faster.
+            # But let's try catching and falling back?
+            try:
+                entry_mask = df.eval(entry_logic)
+                exit_mask = df.eval(exit_logic)
+            except Exception as e:
+                log_sync(f"Logic Evaluation Error: {e}", {"entry": entry_logic, "exit": exit_logic})
+                # Fallback to python engine
+                # entry_mask = df.eval(entry_logic, engine='python')
+                # exit_mask = df.eval(exit_logic, engine='python')
+                return df
 
             # Apply signals
             df.loc[entry_mask, 'signal'] = 1
@@ -110,10 +123,10 @@ class StrategyParser:
             log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
 
         except Exception as e:
-            msg = f"Logic Evaluation Error: {e}"
+            msg = f"Logic Evaluation Fatal Error: {e}"
             print(msg)
             traceback.print_exc()
-            log_sync(msg, {"entry": entry_logic, "exit": exit_logic})
+            log_sync(msg)
 
         # Final Clean: Remove duplicate columns if any crept in
         df = df.loc[:, ~df.columns.duplicated()]
