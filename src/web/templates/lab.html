@@ -141,6 +141,21 @@
             <label for="aiCountInput" class="form-label">Variations</label>
             <input type="number" class="form-control bg-black text-white border-secondary" id="aiCountInput" value="1" min="1" max="5">
         </div>
+        <div class="mb-3">
+            <label class="form-label">Available Indicators</label>
+            <div class="row g-2" style="max-height: 150px; overflow-y: auto;">
+                {% for ind in indicators %}
+                <div class="col-6">
+                    <div class="form-check">
+                        <input class="form-check-input ai-indicator-check" type="checkbox" value="{{ ind.name }}" id="check_{{ ind.name }}" checked>
+                        <label class="form-check-label text-muted small" for="check_{{ ind.name }}">
+                            {{ ind.name|upper }}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
       </div>
       <div class="modal-footer border-secondary">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -252,13 +267,19 @@
         const prompt = document.getElementById('aiPromptInput').value;
         const count = document.getElementById('aiCountInput').value;
 
+        // Collect Checked Indicators
+        const selectedIndicators = [];
+        document.querySelectorAll('.ai-indicator-check:checked').forEach(el => {
+            selectedIndicators.push(el.value);
+        });
+
         if(prompt) {
             logConsole(`Requesting AI generation for: "${prompt}" (${count} variations)... (This may take 10-20s)`);
-            console.log("Submitting AI Generation Request:", prompt);
 
             const formData = new FormData();
             formData.append('prompt', prompt);
             formData.append('count', count);
+            formData.append('indicators', JSON.stringify(selectedIndicators));
 
             try {
                 await fetch('/strategies/generate', {

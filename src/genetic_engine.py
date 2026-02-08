@@ -16,7 +16,7 @@ class GeneticBreeder:
         self.api_key = gemini_api_key or (settings.gemini_api_key if settings else None)
         self.ai_engine = AIEngine(self.api_key) if self.api_key else None
 
-    async def create_generation_zero(self, prompt="Create a robust profitable trend following strategy", count=3):
+    async def create_generation_zero(self, prompt="Create a robust profitable trend following strategy", count=3, allowed_indicators=None):
         """
         Creates the initial population of strategies.
         """
@@ -29,7 +29,7 @@ class GeneticBreeder:
 
         for i in range(count):
             try:
-                recipe = await self.ai_engine.generate_strategy_recipe(f"{prompt}. Variation {i+1}")
+                recipe = await self.ai_engine.generate_strategy_recipe(f"{prompt}. Variation {i+1}", allowed_indicators=allowed_indicators)
                 if recipe:
                     s_ai = Strategy(
                         name=recipe.name,

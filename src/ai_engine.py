@@ -11,31 +11,43 @@ class AIEngine:
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-3-pro-preview"
 
-    async def generate_strategy_recipe(self, prompt: str) -> StrategyRecipe:
+    async def generate_strategy_recipe(self, prompt: str, allowed_indicators: list = None) -> StrategyRecipe:
         """
         Generates a new strategy recipe based on the prompt.
         """
-        system_instruction = """
+        ind_context = "Supported pandas_ta indicators: rsi, macd, sma, ema, bbands, atr, adx."
+        if allowed_indicators:
+             from src.database import SessionLocal, Indicator
+             db = SessionLocal()
+             inds = db.query(Indicator).filter(Indicator.name.in_(allowed_indicators)).all()
+             db.close()
+
+             ind_context = "Available Indicators (You MUST use one or more of these):\n"
+             for ind in inds:
+                 params = ind.params_json or {}
+                 ind_context += f"- Name: {ind.name}\n  Description: {ind.description}\n  Parameters: {params}\n"
+
+        system_instruction = f"""
         You are a quantitative trading architect. Your goal is to design robust, backtestable trading strategies.
         Output MUST be a valid JSON object matching the following schema.
         Do not explain. Return only the JSON.
 
         Schema:
-        {
+        {{
             "name": "Strategy Name",
             "description": "Description",
             "indicators": [
-                {"name": "rsi", "params": {"length": 14}, "col_name": "RSI_14"},
-                {"name": "sma", "params": {"length": 50}, "col_name": "SMA_50"}
+                {{"name": "rsi", "params": {{"length": 14}}, "col_name": "RSI_14"}},
+                {{"name": "sma", "params": {{"length": 50}}, "col_name": "SMA_50"}}
             ],
             "entry_logic": "Pandas query string (e.g., 'RSI_14 < 30 and close > SMA_50')",
             "exit_logic": "Pandas query string (e.g., 'RSI_14 > 70')",
             "sentiment_weight": 0.0,
             "stop_loss": 0.0,
             "take_profit": 0.0
-        }
+        }}
 
-        Supported pandas_ta indicators: rsi, macd, sma, ema, bbands, atr, adx.
+        {ind_context}
         Use DataFrame column names: open, high, low, close, volume.
         """
 

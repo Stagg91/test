@@ -76,6 +76,16 @@ class SentimentLog(Base):
     source = Column(String) # "RSS", "AI", etc
     raw_text = Column(String, nullable=True) # Summary of headlines
 
+class Indicator(Base):
+    __tablename__ = 'indicators'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True)
+    description = Column(String)
+    code = Column(String) # Python function source
+    params_json = Column(JSON, default={})
+    is_overlay = Column(Boolean, default=False)
+    created_at = Column(Float)
+
 # Database Setup
 import os
 import sys

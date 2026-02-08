@@ -24,7 +24,7 @@ from src.ai_sentiment import AISentimentAgent
 
 from src.auth import verify_password, get_password_hash, create_access_token, decode_token, create_magic_token
 from src.notifications import NotificationManager
-from src.utils import get_resource_path
+from src.utils import get_resource_path, sanitize_json_types
 import qrcode
 import io
 import base64
@@ -387,18 +387,7 @@ async def run_backtest(
                  )
 
                  # Sanitize NaN for JSON
-                 # Helper to replace NaN
-                 def sanitize(obj):
-                     if isinstance(obj, float):
-                         if np.isnan(obj) or np.isinf(obj):
-                             return 0.0
-                     if isinstance(obj, dict):
-                         return {k: sanitize(v) for k, v in obj.items()}
-                     if isinstance(obj, list):
-                         return [sanitize(v) for v in obj]
-                     return obj
-
-                 res = sanitize(res)
+                 res = sanitize_json_types(res)
 
                  # Inject chart into response
                  return [{
@@ -455,14 +444,25 @@ async def generate_strategies(
     request: Request,
     prompt: str = Form("Robust trend following strategy"),
     count: int = Form(3),
+    indicators: str = Form("[]"),
     db: Session = Depends(get_db)
 ):
-    await LabLogger.log("AI", f"Requesting Generation: {prompt}", {"count": count})
+    await LabLogger.log("AI", f"Requesting Generation: {prompt}", {"count": count, "indicators": indicators})
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
 
+    import json
+    try:
+        selected_indicators = json.loads(indicators)
+    except:
+        selected_indicators = []
+
     breeder = GeneticBreeder(gemini_api_key=key)
-    new_strats = await breeder.create_generation_zero(prompt=prompt, count=count)
+    new_strats = await breeder.create_generation_zero(
+        prompt=prompt,
+        count=count,
+        allowed_indicators=selected_indicators
+    )
 
     await LabLogger.log("API", f"Generated {len(new_strats)} strategies.")
 
@@ -593,6 +593,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              res = bt.run_vectorized_backtest(recipe)
 
              # Save result
+             res = sanitize_json_types(res)
              br = BacktestResult(
                 strategy_id=strat.id,
                 symbol="BTCUSDT",
@@ -622,6 +623,7 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
             from src.backtester import Backtester
             bt = Backtester(df, initial_balance=10000)
             res = bt.walk_forward_validation(instance)
+            res = sanitize_json_types(res)
             test_res = res['test']
             br = BacktestResult(
                 strategy_id=strat.id,
@@ -778,10 +780,78 @@ async def lab_page(request: Request, db: Session = Depends(get_db)):
         .join(Strategy, BacktestResult.strategy_id == Strategy.id)\
         .order_by(BacktestResult.roi.desc()).first()
 
+    from src.database import Indicator
+    indicators = db.query(Indicator).all()
+
     return templates.TemplateResponse("lab.html", {
         "request": request,
         "settings": settings,
         "strategies": strategies,
         "max_gen": max_gen,
-        "best_strat": best_strat
+        "best_strat": best_strat,
+        "indicators": indicators
     })
+
+@app.get("/indicators", response_class=HTMLResponse)
+async def indicators_page(request: Request, db: Session = Depends(get_db)):
+    from src.database import Indicator
+    indicators = db.query(Indicator).all()
+    return templates.TemplateResponse("indicators.html", {"request": request, "indicators": indicators})
+
+@app.post("/indicators/save")
+async def save_indicator(
+    request: Request,
+    id: str = Form(None),
+    name: str = Form(...),
+    description: str = Form(...),
+    code: str = Form(...),
+    params_json: str = Form(...),
+    is_overlay: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    from src.database import Indicator
+    import json
+    import time
+
+    try:
+        params = json.loads(params_json)
+    except:
+        params = {}
+
+    if id:
+        ind = db.query(Indicator).filter(Indicator.id == int(id)).first()
+        if ind:
+            ind.name = name
+            ind.description = description
+            ind.code = code
+            ind.params_json = params
+            ind.is_overlay = is_overlay
+            db.commit()
+    else:
+        # Check duplicate name
+        exists = db.query(Indicator).filter(Indicator.name == name).first()
+        if exists:
+            # Handle error? Redirect with flash message ideally.
+            return RedirectResponse("/indicators?error=Duplicate+Name", status_code=303)
+
+        new_ind = Indicator(
+            name=name,
+            description=description,
+            code=code,
+            params_json=params,
+            is_overlay=is_overlay,
+            created_at=time.time()
+        )
+        db.add(new_ind)
+        db.commit()
+
+    return RedirectResponse("/indicators", status_code=303)
+
+@app.post("/indicators/delete")
+async def delete_indicator(id: int = Form(...), db: Session = Depends(get_db)):
+    from src.database import Indicator
+    ind = db.query(Indicator).filter(Indicator.id == id).first()
+    if ind:
+        db.delete(ind)
+        db.commit()
+    return RedirectResponse("/indicators", status_code=303)
