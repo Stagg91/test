@@ -487,6 +487,21 @@ async def deactivate_strategy(strat_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse("/strategies", status_code=303)
 
+@app.post("/strategies/bulk_delete")
+async def bulk_delete_strategies(request: Request, strategy_ids: str = Form(...), db: Session = Depends(get_db)):
+    import json
+    try:
+        ids = json.loads(strategy_ids)
+        if ids:
+            db.query(Strategy).filter(Strategy.id.in_(ids)).delete(synchronize_session=False)
+            db.commit()
+            await LabLogger.log("UI", f"Deleted {len(ids)} strategies.")
+    except Exception as e:
+        print(f"Bulk Delete Error: {e}")
+        await LabLogger.log("ERROR", f"Bulk Delete Failed: {e}")
+
+    return RedirectResponse("/strategies", status_code=303)
+
 @app.get("/evolution", response_class=HTMLResponse)
 async def evolution_page(request: Request, db: Session = Depends(get_db)):
     # Get Generation Stats

@@ -307,6 +307,14 @@ def main():
              db.commit()
     db.close()
 
+    # Seed Default Indicators
+    try:
+        from src.seed_indicators import seed_indicators
+        print("Seeding default indicators...")
+        seed_indicators()
+    except Exception as e:
+        print(f"Error seeding indicators: {e}")
+
     try:
         # Start Threads
         bot_thread = threading.Thread(target=bot_loop, daemon=True)
