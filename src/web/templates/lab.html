@@ -234,24 +234,29 @@
                 logConsole(`Error: ${data.error}`);
             } else if (data.length > 0) {
                 const metrics = data[0].metrics;
-                const pnlClass = metrics.total_pnl_abs >= 0 ? 'text-success' : 'text-danger';
+                const pnl = metrics.total_pnl_abs || 0;
+                const pnlClass = pnl >= 0 ? 'text-success' : 'text-danger';
+                const roi = metrics.roi_percent || 0;
+                const winRate = (metrics.win_rate || 0) * 100;
+                const dd = metrics.max_drawdown || 0;
+                const numTrades = metrics.num_trades || 0;
 
                 resultDiv.innerHTML = `
-                    <h5 class="${pnlClass}">PnL: $${metrics.total_pnl_abs.toFixed(2)} (${metrics.roi_percent.toFixed(2)}%)</h5>
+                    <h5 class="${pnlClass}">PnL: $${pnl.toFixed(2)} (${roi.toFixed(2)}%)</h5>
                     <p>
-                    Trades: ${metrics.num_trades}<br>
-                    Win Rate: ${(metrics.win_rate * 100).toFixed(1)}%<br>
-                    Max DD: ${metrics.max_drawdown ? metrics.max_drawdown.toFixed(2) : 0}%
+                    Trades: ${numTrades}<br>
+                    Win Rate: ${winRate.toFixed(1)}%<br>
+                    Max DD: ${dd.toFixed(2)}%
                     </p>
                     <hr>
                     <small class="text-muted">Last 5 Trades:</small>
                     <ul class="list-unstyled small">
                         ${metrics.trades ? metrics.trades.slice(-5).reverse().map(t =>
-                            `<li>${t.timestamp ? new Date(t.timestamp).toLocaleDateString() : ''}: <span class="${t.pnl >= 0 ? 'text-success' : 'text-danger'}">${t.pnl.toFixed(2)}%</span></li>`
+                            `<li>${t.timestamp ? new Date(t.timestamp).toLocaleDateString() : ''}: <span class="${(t.pnl || 0) >= 0 ? 'text-success' : 'text-danger'}">${(t.pnl || 0).toFixed(2)}%</span></li>`
                         ).join('') : 'No trades'}
                     </ul>
                 `;
-                logConsole(`Backtest Complete. ROI: ${metrics.roi_percent.toFixed(2)}%`);
+                logConsole(`Backtest Complete. ROI: ${roi.toFixed(2)}%`);
             } else {
                  resultDiv.innerHTML = "No results returned.";
             }

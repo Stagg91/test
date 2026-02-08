@@ -91,7 +91,9 @@ class Backtester:
                 "win_rate": win_rate,
                 "total_trades": total_trades,
                 "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "equity_curve": df['equity'].tolist(),
+                "total_pnl_abs": df['equity'].iloc[-1] - self.initial_balance,
+                "num_trades": total_trades
             }
 
         except Exception as e:
