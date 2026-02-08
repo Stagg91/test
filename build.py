@@ -53,6 +53,7 @@ args = [
     "--hidden-import=pystray.backends.xorg",
     "--hidden-import=pystray.backends.gtk",
     "--hidden-import=pyarrow",
+    "--hidden-import=yfinance",  # Ensure yfinance is included if available
 
     "--clean",
 ]

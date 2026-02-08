@@ -1,5 +1,4 @@
 import pandas as pd
-import yfinance as yf
 from datetime import datetime
 from src.data_warehouse import DataWarehouse
 
@@ -86,6 +85,12 @@ class DataEngine:
         """
         Fetches data from Yahoo Finance.
         """
+        try:
+            import yfinance as yf
+        except ImportError:
+            print("yfinance not installed. Skipping Yahoo data fetch.")
+            return pd.DataFrame()
+
         # Map Symbol
         yf_symbol = symbol
         if symbol.endswith("USDT"):
