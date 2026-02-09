@@ -31,17 +31,37 @@
     <h3>Strategy Library</h3>
     <p class="text-muted small">Strategies are grouped by lineage. Click to expand.</p>
 
+    <form action="/strategies/delete" method="post" id="deleteForm">
+    <div class="mb-3 text-end">
+        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies?')">
+            <i class="fa-solid fa-trash"></i> Delete Selected
+        </button>
+    </div>
+
     <div class="accordion" id="strategyAccordion">
         {% for s in strategies %}
         <div class="accordion-item bg-dark border-secondary mb-2">
             <h2 class="accordion-header" id="heading{{ s.id }}">
-                <button class="accordion-button collapsed bg-dark text-white shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
-                    <span class="badge bg-secondary me-2">Gen {{ s.generation }}</span>
-                    <span class="fw-bold me-auto">{{ s.name }}</span>
+                <div class="d-flex align-items-center w-100 bg-dark text-white p-2">
+                    <div class="me-2">
+                        <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
+                    </div>
+                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
+                        <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
+                        <span class="fw-bold me-auto">{{ s.name }}</span>
 
-                    {% if s.is_active %}
-                    <span class="badge bg-success me-2">ACTIVE</span>
-                    {% endif %}
+                        {% if s.is_active %}
+                        <span class="badge bg-success me-2">ACTIVE</span>
+                        {% endif %}
+
+                        {% if children_map[s.id] %}
+                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
+                        {% endif %}
+                    </button>
+                </div>
+            </h2>
+            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
+                <div class="accordion-body border-top border-secondary">
 
                     {% if children_map[s.id] %}
                     <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
@@ -129,6 +149,7 @@
         </div>
         {% endfor %}
     </div>
+    </form>
 </div>
 
 <!-- Backtest Modal (Placeholder for Step 4) -->

@@ -89,6 +89,12 @@ class StrategyParser:
         entry_logic = strategy.entry_logic
         exit_logic = strategy.exit_logic
 
+        # Additional Sanitization: Replace . with _ in logic strings if they match column pattern
+        # This handles cases where logic string has "2.0" but column was renamed to "2_0"
+        # However, we must be careful not to replace actual floats like 0.5
+        # The rename_map handles columns that *existed* and were renamed.
+        # But if the user typed "BBU_20_2.0" manually in the logic, we need to map it.
+
         for old, new in rename_map.items():
             entry_logic = entry_logic.replace(old, new)
             exit_logic = exit_logic.replace(old, new)

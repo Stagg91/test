@@ -31,6 +31,7 @@ import io
 import base64
 from src.visualization import ChartGenerator
 from src.strategies.schemas import StrategyRecipe
+from typing import List
 
 # Init DB
 init_db()
@@ -297,6 +298,7 @@ async def save_settings(
     auto_evolve: bool = Form(False),
     evolution_lookback_value: int = Form(3),
     evolution_lookback_unit: str = Form("Months"),
+    evolution_interval: int = Form(30),
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -314,6 +316,7 @@ async def save_settings(
     settings.auto_evolve = auto_evolve
     settings.evolution_lookback_value = evolution_lookback_value
     settings.evolution_lookback_unit = evolution_lookback_unit
+    settings.evolution_interval = evolution_interval
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
@@ -548,6 +551,21 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
         "strategies": roots,
         "children_map": children_map
     })
+
+@app.post("/strategies/delete")
+async def delete_strategies(strategy_ids: List[int] = Form(...), db: Session = Depends(get_db)):
+    if not strategy_ids:
+        return RedirectResponse("/strategies", status_code=303)
+
+    # Delete strategies
+    db.query(Strategy).filter(Strategy.id.in_(strategy_ids)).delete(synchronize_session=False)
+
+    # Also delete children? Or just let them be orphaned (roots)?
+    # If we delete a parent, children will have parent_id pointing to non-existent ID.
+    # In 'strategies_page' logic, they will become roots. That's fine.
+
+    db.commit()
+    return RedirectResponse("/strategies", status_code=303)
 
 @app.post("/strategies/generate")
 async def generate_strategies(

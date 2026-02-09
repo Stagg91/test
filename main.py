@@ -42,9 +42,13 @@ def evolution_loop():
             if settings and settings.auto_evolve:
                 now = time.time()
                 last_run = settings.last_evolution_time or 0.0
-                # Run every 4 hours = 14400 seconds
-                if now - last_run > 14400:
-                    loop.run_until_complete(LabLogger.log("EVO", "Auto-Evolution Triggered."))
+
+                # Dynamic Interval
+                interval_minutes = settings.evolution_interval if settings.evolution_interval else 30
+                interval_seconds = interval_minutes * 60
+
+                if now - last_run > interval_seconds:
+                    loop.run_until_complete(LabLogger.log("EVO", f"Auto-Evolution Triggered (Interval: {interval_minutes}m)."))
                     # Update last run immediately
                     settings.last_evolution_time = now
                     db.commit()

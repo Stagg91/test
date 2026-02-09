@@ -51,10 +51,12 @@ class TALib:
         lower = mid - std * sigma
 
         # Match pandas_ta naming (BBL, BBM, BBU)
+        # Sanitize std: replace . with _ for numexpr compatibility
+        std_str = str(std).replace('.', '_')
         return pd.DataFrame({
-            f'BBL_{length}_{std}': lower,
-            f'BBM_{length}_{std}': mid,
-            f'BBU_{length}_{std}': upper
+            f'BBL_{length}_{std_str}': lower,
+            f'BBM_{length}_{std_str}': mid,
+            f'BBU_{length}_{std_str}': upper
         })
 
     @staticmethod

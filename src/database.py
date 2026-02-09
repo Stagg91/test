@@ -17,6 +17,7 @@ class Settings(Base):
     last_evolution_time = Column(Float, default=0.0)
     evolution_lookback_value = Column(Integer, default=3)
     evolution_lookback_unit = Column(String, default="Months")
+    evolution_interval = Column(Integer, default=30) # Minutes
 
 class User(Base):
     __tablename__ = 'users'
@@ -156,6 +157,16 @@ def init_db():
                 try:
                     conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_lookback_value INTEGER DEFAULT 3"))
                     conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_lookback_unit VARCHAR DEFAULT 'Months'"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+        # Check for evolution_interval
+        if "evolution_interval" not in columns:
+             print("Migrating settings table: adding evolution_interval...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_interval INTEGER DEFAULT 30"))
                     conn.commit()
                 except Exception as e:
                      print(f"Migration Error: {e}")
