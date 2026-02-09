@@ -62,7 +62,7 @@
                     <div class="row g-2 mb-3">
                         <div class="col-4">
                             <label class="form-label text-muted small">Balance</label>
-                            <input type="number" name="initial_balance" class="form-control bg-black text-white border-secondary form-control-sm" value="10000">
+                            <input type="number" name="initial_balance" class="form-control bg-black text-white border-secondary form-control-sm" value="1000">
                         </div>
                         <div class="col-4">
                             <label class="form-label text-muted small">Start Date</label>
@@ -70,7 +70,7 @@
                         </div>
                         <div class="col-4">
                             <label class="form-label text-muted small">End Date</label>
-                            <input type="date" name="end_time" class="form-control bg-black text-white border-secondary form-control-sm">
+                            <input type="date" name="end_time" id="labEndDate" class="form-control bg-black text-white border-secondary form-control-sm">
                         </div>
                     </div>
 
@@ -258,5 +258,12 @@
     connectWS();
     updateMarketScan();
     setInterval(updateMarketScan, 10000);
+
+    // Set Default End Date to Today
+    document.addEventListener("DOMContentLoaded", function() {
+        const today = new Date().toISOString().split('T')[0];
+        const dateInput = document.getElementById('labEndDate');
+        if(dateInput) dateInput.value = today;
+    });
 </script>
 {% endblock %}

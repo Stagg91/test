@@ -170,7 +170,7 @@
 
              <div class="mb-3">
                  <label>Initial Balance</label>
-                 <input type="number" name="initial_balance" value="10000" class="form-control bg-black text-white border-secondary">
+                 <input type="number" name="initial_balance" value="1000" class="form-control bg-black text-white border-secondary">
              </div>
 
              <!-- Date Range Inputs (Step 4) -->
@@ -181,7 +181,7 @@
                  </div>
                  <div class="col-6 mb-3">
                      <label>End Date</label>
-                     <input type="date" name="end_time" class="form-control bg-black text-white border-secondary">
+                     <input type="date" name="end_time" id="modalEndDate" class="form-control bg-black text-white border-secondary">
                  </div>
              </div>
 
@@ -198,6 +198,8 @@
 function openBacktestModal(id, name) {
     document.getElementById('modalStratId').value = id;
     document.getElementById('modalStratName').value = name;
+    // Set Today
+    document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
 }
 </script>

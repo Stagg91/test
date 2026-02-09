@@ -372,13 +372,35 @@ async def run_backtest(
     # Increase limit if dates provided, or default 1000
     limit = 100000 if (start_time or end_time) else 1000
 
+    # --- Data Buffer Logic ---
+    # If start_time is provided, shift it back by X candles to allow indicators (EMA, RSI, ADX) to warm up.
+    # Otherwise, they will be NaN at the start, potentially crashing logic or producing 0 trades.
+    real_start_time = ts_start
+    if ts_start:
+        # Approximate ms per candle.
+        # Interval map: 60 -> 1h, D -> 1 day, etc.
+        ms_per_candle = 3600000 # Default 1h
+        if str(interval) == "1": ms_per_candle = 60000
+        elif str(interval) == "5": ms_per_candle = 300000
+        elif str(interval) == "15": ms_per_candle = 900000
+        elif str(interval) == "240": ms_per_candle = 14400000
+        elif str(interval).upper() == "D": ms_per_candle = 86400000
+
+        # Buffer of 200 candles
+        buffer_ms = 200 * ms_per_candle
+        ts_start = ts_start - buffer_ms
+
     df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start, end_time=ts_end)
 
     if df.empty:
         await LabLogger.log("BACKTEST", "Error: No data found for specified range.")
         return {"error": "No data found"}
 
-    await LabLogger.log("BACKTEST", f"Data Loaded: {len(df)} candles.")
+    if len(df) < 50:
+        await LabLogger.log("BACKTEST", f"Error: Insufficient data loaded ({len(df)} candles).")
+        return {"error": "Insufficient data (need > 50 candles)"}
+
+    await LabLogger.log("BACKTEST", f"Data Loaded: {len(df)} candles (inc. buffer).")
     bt = Backtester(df, initial_balance=initial_balance)
 
     if strategy_mode == "ai" and strategy_id:
