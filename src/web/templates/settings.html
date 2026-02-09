@@ -49,6 +49,18 @@
                         <div class="form-text">Automatically breeds new strategies every 4 hours across available pairs.</div>
                     </div>
 
+                    <label class="form-label mt-2">Evolution Lookback Period</label>
+                    <div class="input-group mb-3">
+                        <input type="number" name="evolution_lookback_value" class="form-control bg-dark text-white border-secondary" value="{{ settings.evolution_lookback_value }}" min="1">
+                        <select name="evolution_lookback_unit" class="form-select bg-dark text-white border-secondary">
+                            <option value="Hours" {% if settings.evolution_lookback_unit == 'Hours' %}selected{% endif %}>Hours</option>
+                            <option value="Days" {% if settings.evolution_lookback_unit == 'Days' %}selected{% endif %}>Days</option>
+                            <option value="Weeks" {% if settings.evolution_lookback_unit == 'Weeks' %}selected{% endif %}>Weeks</option>
+                            <option value="Months" {% if settings.evolution_lookback_unit == 'Months' %}selected{% endif %}>Months</option>
+                            <option value="Years" {% if settings.evolution_lookback_unit == 'Years' %}selected{% endif %}>Years</option>
+                        </select>
+                    </div>
+
                     <hr class="border-secondary my-4">
 
                     <h5 class="text-gold mb-3">Execution Mode</h5>

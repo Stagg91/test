@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 import json
 import numpy as np
+import time
 
 from src.database import SessionLocal, engine, Settings, init_db, User, Strategy, BacktestResult
 from src.bybit_client import BybitClient
@@ -48,6 +49,13 @@ templates_path = get_resource_path("src/web/templates")
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 templates = Jinja2Templates(directory=templates_path)
+
+def time_since(timestamp):
+    if not timestamp: return 0
+    diff = time.time() - timestamp
+    return diff / 3600 # Hours
+
+templates.env.filters['time_since'] = time_since
 
 @app.websocket("/ws/lab_log")
 async def websocket_endpoint(websocket: WebSocket):
@@ -287,6 +295,8 @@ async def save_settings(
     paper_balance: float = Form(10000.0),
     is_active: bool = Form(False),
     auto_evolve: bool = Form(False),
+    evolution_lookback_value: int = Form(3),
+    evolution_lookback_unit: str = Form("Months"),
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -302,6 +312,8 @@ async def save_settings(
     settings.paper_balance = paper_balance
     settings.is_active = is_active
     settings.auto_evolve = auto_evolve
+    settings.evolution_lookback_value = evolution_lookback_value
+    settings.evolution_lookback_unit = evolution_lookback_unit
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
@@ -325,6 +337,7 @@ async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Sess
 
 @app.post("/run_backtest")
 async def run_backtest(
+    request: Request,
     symbol: str = Form(...),
     initial_balance: float = Form(10000.0),
     start_time: str = Form(None), # Optional YYYY-MM-DD
@@ -348,11 +361,18 @@ async def run_backtest(
     ts_start = None
     ts_end = None
     if start_time:
-        ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
+        try:
+            ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
+        except: pass
     if end_time:
-        ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+        try:
+            ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+        except: pass
 
-    df = de.fetch_ohlcv(symbol, interval=interval, limit=1000 if (start_time or end_time) else 200, start_time=ts_start, end_time=ts_end)
+    # Increase limit if dates provided, or default 1000
+    limit = 100000 if (start_time or end_time) else 1000
+
+    df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start, end_time=ts_end)
 
     if df.empty:
         await LabLogger.log("BACKTEST", "Error: No data found for specified range.")
@@ -372,21 +392,32 @@ async def run_backtest(
             if strat.content_json:
                  recipe = StrategyRecipe(**strat.content_json)
                  res = bt.run_vectorized_backtest(recipe)
-                 # Add chart data to result
-                 # Re-run parser to get DF with signals/indicators for chart
-                 # Optimization: Backtester could return DF?
-                 # Currently returns dict.
-                 # Let's reconstruct chart data
-                 from src.strategy_parser import StrategyParser
-                 parser = StrategyParser()
-                 df_res = parser.parse_and_execute(df, recipe)
 
-                 chart_json = ChartGenerator.generate_chart_json(
-                     df_res,
-                     indicators=[ind.col_name or ind.name for ind in recipe.indicators]
+                 # Save Result
+                 br = BacktestResult(
+                    strategy_id=strat.id,
+                    symbol=symbol,
+                    start_date=str(df.iloc[0]['startTime']),
+                    end_date=str(df.iloc[-1]['startTime']),
+                    roi=res['roi_percent'],
+                    sharpe=res['sharpe'],
+                    max_drawdown=res['max_drawdown'],
+                    win_rate=res['win_rate'],
+                    trades_count=res['total_trades'],
+                    metrics_json=json.dumps(res),
+                    timestamp=time.time()
                  )
+                 db.add(br)
+                 db.commit()
 
-                 # Sanitize NaN for JSON
+                 # Redirect if HTML requested (Form Submit)
+                 if "text/html" in request.headers.get("accept", ""):
+                     return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
+
+                 # Else return JSON (Legacy/Fetch)
+                 # We still generate chart JSON for legacy consumers?
+                 # ... (Omitted chart gen for speed if just JSON)
+
                  # Helper to replace NaN
                  def sanitize(obj):
                      if isinstance(obj, float):
@@ -399,12 +430,10 @@ async def run_backtest(
                      return obj
 
                  res = sanitize(res)
-
-                 # Inject chart into response
                  return [{
                     "params": {"name": strat.name},
                     "metrics": res,
-                    "chart_json": chart_json
+                    "result_id": br.id # Return ID so frontend can link if needed
                 }]
 
             else:
@@ -417,9 +446,33 @@ async def run_backtest(
 
                 instance = StrategyClass()
                 res = bt.run_strategy_instance(instance)
+
+                # Save Result
+                # Walk forward result structure is different
+                test_res = res.get('test', res)
+
+                br = BacktestResult(
+                    strategy_id=strat.id,
+                    symbol=symbol,
+                    start_date=str(df.iloc[0]['startTime']),
+                    end_date=str(df.iloc[-1]['startTime']),
+                    roi=test_res['roi_percent'],
+                    sharpe=test_res['sharpe'],
+                    max_drawdown=test_res['max_drawdown'],
+                    win_rate=test_res['win_rate'] * 100,
+                    trades_count=test_res['total_trades'],
+                    metrics_json=json.dumps(res),
+                    timestamp=time.time()
+                )
+                db.add(br)
+                db.commit()
+
+                if "text/html" in request.headers.get("accept", ""):
+                     return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
+
                 return [{
                     "params": {"name": strat.name},
-                    "metrics": res
+                    "metrics": test_res
                 }]
         except Exception as e:
             traceback.print_exc()
@@ -447,8 +500,32 @@ async def run_backtest(
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
-    strategies = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
-    return templates.TemplateResponse("strategies.html", {"request": request, "strategies": strategies})
+    all_strats = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
+
+    # Organize into trees
+    # Map ID -> Strategy
+    strat_map = {s.id: s for s in all_strats}
+
+    # Identify Roots (No parent or parent not in current set)
+    roots = []
+    children_map = {} # ParentID -> List of Children
+
+    for s in all_strats:
+        if s.parent_id and s.parent_id in strat_map:
+            if s.parent_id not in children_map:
+                children_map[s.parent_id] = []
+            children_map[s.parent_id].append(s)
+        else:
+            roots.append(s)
+
+    # Sort roots by generation desc
+    roots.sort(key=lambda x: x.generation, reverse=True)
+
+    return templates.TemplateResponse("strategies.html", {
+        "request": request,
+        "strategies": roots,
+        "children_map": children_map
+    })
 
 @app.post("/strategies/generate")
 async def generate_strategies(

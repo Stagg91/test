@@ -52,7 +52,7 @@ class GeneticBreeder:
         self.db.commit()
         return strategies
 
-    async def evaluate_population(self, generation=0, symbol="BTCUSDT"):
+    async def evaluate_population(self, generation=0, symbol="BTCUSDT", start_time=None):
         """
         Runs vectorized backtests on all strategies of a specific generation.
         """
@@ -60,8 +60,12 @@ class GeneticBreeder:
         await LabLogger.log("EVO", f"Evaluating {len(strategies)} strategies for Gen {generation} on {symbol}...")
 
         de = DataEngine()
-        # Fetch data once (limit 1000 candles for speed)
-        df = de.fetch_ohlcv(symbol, interval="60", limit=1000)
+        if start_time:
+             # Fetch data from start_time
+             df = de.fetch_ohlcv(symbol, interval="60", start_time=start_time)
+        else:
+             # Default fallback
+             df = de.fetch_ohlcv(symbol, interval="60", limit=1000)
 
         if df.empty:
             await LabLogger.log("ERROR", f"No data for {symbol}")
