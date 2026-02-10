@@ -413,10 +413,29 @@ async def run_backtest(
             return {"error": "Strategy not found"}
 
         try:
+            # Helper to replace NaN and Numpy types
+            def sanitize(obj):
+                if isinstance(obj, (np.integer, int)):
+                    return int(obj)
+                if isinstance(obj, (np.floating, float)):
+                    if np.isnan(obj) or np.isinf(obj):
+                        return 0.0
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return sanitize(obj.tolist())
+                if isinstance(obj, dict):
+                    return {k: sanitize(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [sanitize(v) for v in obj]
+                return obj
+
             # Check if JSON Strategy
             if strat.content_json:
                  recipe = StrategyRecipe(**strat.content_json)
                  res = bt.run_vectorized_backtest(recipe)
+
+                 # Sanitize before saving to DB
+                 res = sanitize(res)
 
                  # Save Result
                  br = BacktestResult(
@@ -439,22 +458,6 @@ async def run_backtest(
                  if "text/html" in request.headers.get("accept", ""):
                      return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
 
-                 # Else return JSON (Legacy/Fetch)
-                 # We still generate chart JSON for legacy consumers?
-                 # ... (Omitted chart gen for speed if just JSON)
-
-                 # Helper to replace NaN
-                 def sanitize(obj):
-                     if isinstance(obj, float):
-                         if np.isnan(obj) or np.isinf(obj):
-                             return 0.0
-                     if isinstance(obj, dict):
-                         return {k: sanitize(v) for k, v in obj.items()}
-                     if isinstance(obj, list):
-                         return [sanitize(v) for v in obj]
-                     return obj
-
-                 res = sanitize(res)
                  return [{
                     "params": {"name": strat.name},
                     "metrics": res,
