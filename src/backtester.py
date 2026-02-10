@@ -93,6 +93,10 @@ class Backtester:
                         start_ts = entry_row.get('startTime', entry_row.name)
                         end_ts = exit_row.get('startTime', exit_row.name)
 
+                        # Calculate absolute PnL (Approximate based on equity at entry)
+                        entry_equity = float(entry_row.get('equity', self.initial_balance))
+                        pnl_abs = entry_equity * pnl_pct
+
                         trade_list.append({
                             "trade_id": int(tid),
                             "entry_time": str(start_ts),
@@ -100,6 +104,7 @@ class Backtester:
                             "exit_time": str(end_ts),
                             "exit_price": float(exit_row['close']),
                             "pnl_percent": float(pnl_pct * 100),
+                            "pnl_abs": float(pnl_abs),
                             "direction": "Long" # Currently only Longs
                         })
                     except Exception as e:

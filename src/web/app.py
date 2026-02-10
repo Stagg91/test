@@ -38,6 +38,25 @@ init_db()
 
 app = FastAPI()
 
+def sanitize_json(obj):
+    """
+    Recursively convert NumPy types (int64, float64, ndarray) and handle NaNs/Infs
+    to ensure JSON serialization compatibility.
+    """
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        if np.isnan(obj) or np.isinf(obj):
+            return 0.0
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return sanitize_json(obj.tolist())
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_json(v) for v in obj]
+    return obj
+
 @app.on_event("startup")
 async def startup_event():
     import asyncio
@@ -413,29 +432,13 @@ async def run_backtest(
             return {"error": "Strategy not found"}
 
         try:
-            # Helper to replace NaN and Numpy types
-            def sanitize(obj):
-                if isinstance(obj, (np.integer, int)):
-                    return int(obj)
-                if isinstance(obj, (np.floating, float)):
-                    if np.isnan(obj) or np.isinf(obj):
-                        return 0.0
-                    return float(obj)
-                if isinstance(obj, np.ndarray):
-                    return sanitize(obj.tolist())
-                if isinstance(obj, dict):
-                    return {k: sanitize(v) for k, v in obj.items()}
-                if isinstance(obj, list):
-                    return [sanitize(v) for v in obj]
-                return obj
-
             # Check if JSON Strategy
             if strat.content_json:
                  recipe = StrategyRecipe(**strat.content_json)
                  res = bt.run_vectorized_backtest(recipe)
 
                  # Sanitize before saving to DB
-                 res = sanitize(res)
+                 res = sanitize_json(res)
 
                  # Save Result
                  br = BacktestResult(
@@ -474,6 +477,9 @@ async def run_backtest(
 
                 instance = StrategyClass()
                 res = bt.run_strategy_instance(instance)
+
+                # Sanitize Legacy Results
+                res = sanitize_json(res)
 
                 # Save Result
                 # Walk forward result structure is different
@@ -530,6 +536,22 @@ async def run_backtest(
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
     all_strats = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
 
+    # Fetch all backtest results to find best stats
+    all_results = db.query(BacktestResult).all()
+
+    # Map strategy_id -> best result (by ROI)
+    stats_map = {}
+    for res in all_results:
+        if res.strategy_id not in stats_map:
+            stats_map[res.strategy_id] = res
+        else:
+            if res.roi > stats_map[res.strategy_id].roi:
+                stats_map[res.strategy_id] = res
+
+    # Attach stats to strategy objects (dynamically)
+    # We can't modify the ORM object easily without transient issues,
+    # but we can pass the map to the template.
+
     # Organize into trees
     # Map ID -> Strategy
     strat_map = {s.id: s for s in all_strats}
@@ -552,13 +574,17 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("strategies.html", {
         "request": request,
         "strategies": roots,
-        "children_map": children_map
+        "children_map": children_map,
+        "stats_map": stats_map
     })
 
 @app.post("/strategies/delete")
 async def delete_strategies(strategy_ids: List[int] = Form(...), db: Session = Depends(get_db)):
     if not strategy_ids:
         return RedirectResponse("/strategies", status_code=303)
+
+    # Delete associated backtest results
+    db.query(BacktestResult).filter(BacktestResult.strategy_id.in_(strategy_ids)).delete(synchronize_session=False)
 
     # Delete strategies
     db.query(Strategy).filter(Strategy.id.in_(strategy_ids)).delete(synchronize_session=False)
@@ -883,6 +909,29 @@ async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int 
     # Handle NaN
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
+
+@app.get("/api/strategy_matrix")
+async def get_strategy_matrix(db: Session = Depends(get_db)):
+    """
+    Returns data for the Strategy Matrix (ROI vs Drawdown scatter plot).
+    """
+    results = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).all()
+
+    data = []
+    for br, strat in results:
+        data.append({
+            "strategy_id": strat.id,
+            "strategy_name": strat.name,
+            "backtest_id": br.id,
+            "roi": br.roi,
+            "max_drawdown": br.max_drawdown,
+            "win_rate": br.win_rate,
+            "trades": br.trades_count,
+            "generation": strat.generation
+        })
+
+    # Sanitize to be safe (though DB floats are usually fine)
+    return sanitize_json(data)
 
 @app.get("/lab", response_class=HTMLResponse)
 async def lab_page(request: Request, db: Session = Depends(get_db)):

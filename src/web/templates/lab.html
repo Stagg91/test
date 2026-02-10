@@ -122,6 +122,20 @@
     </div>
 </div>
 
+<!-- Strategy Matrix (Dot Matrix) -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark text-white border-gold shadow-sm">
+            <div class="card-header border-secondary text-gold">
+                <i class="fa-solid fa-braille"></i> Strategy Performance Matrix (ROI vs Drawdown)
+            </div>
+            <div class="card-body p-2">
+                <div id="strategyMatrixChart" style="width:100%;height:400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Log / Console -->
 <div class="row mt-4">
     <div class="col-12">
@@ -167,7 +181,51 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script>
+    // 0. Strategy Matrix Plot
+    async function loadStrategyMatrix() {
+        try {
+            const res = await fetch('/api/strategy_matrix');
+            const data = await res.json();
+
+            if (!data || data.length === 0) {
+                document.getElementById('strategyMatrixChart').innerHTML = '<div class="text-center text-muted py-5">No backtest data available yet. Run simulations to populate the matrix.</div>';
+                return;
+            }
+
+            const trace = {
+                x: data.map(d => Math.abs(d.max_drawdown)), // Use absolute DD for X axis (positive)
+                y: data.map(d => d.roi),
+                mode: 'markers',
+                type: 'scatter',
+                text: data.map(d => `<b>${d.strategy_name}</b> (ID: ${d.strategy_id})<br>Backtest #${d.backtest_id}<br>ROI: ${d.roi.toFixed(2)}%<br>DD: ${d.max_drawdown.toFixed(2)}%<br>Win Rate: ${d.win_rate.toFixed(1)}%`),
+                marker: {
+                    size: 10,
+                    color: data.map(d => d.roi), // Color by ROI
+                    colorscale: 'Viridis',
+                    colorbar: { title: 'ROI %' },
+                    line: { color: '#fff', width: 1 }
+                },
+                hovertemplate: '%{text}<extra></extra>'
+            };
+
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#fff' },
+                xaxis: { title: 'Max Drawdown (%)', gridcolor: '#444' },
+                yaxis: { title: 'Total Return (ROI %)', gridcolor: '#444' },
+                margin: { t: 30, b: 40, l: 60, r: 20 },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('strategyMatrixChart', [trace], layout);
+        } catch (e) {
+            console.error("Matrix Error:", e);
+        }
+    }
+
     // 1. Market Scan Polling
     async function updateMarketScan() {
         try {
@@ -257,6 +315,7 @@
     // Init
     connectWS();
     updateMarketScan();
+    loadStrategyMatrix(); // Load Matrix
     setInterval(updateMarketScan, 10000);
 
     // Set Default End Date to Today
