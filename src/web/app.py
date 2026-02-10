@@ -240,23 +240,25 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/api/symbols")
 async def get_symbols(db: Session = Depends(get_db)):
-    settings = db.query(Settings).first()
-    key = settings.api_key if settings else None
-    secret = settings.api_secret if settings else None
-    testnet = settings.testnet if settings else True
+    """
+    Returns the Top 20 USDT-Perpetual pairs by 24h Volume.
+    """
+    # Reuse market watch logic to get sorted volume
+    market_data = await get_market_watch(db)
 
-    client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
-    resp = client.get_instruments()
+    # Check if market_data is empty or not list
+    if not market_data or not isinstance(market_data, list):
+        return ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
-    if resp and 'result' in resp and 'list' in resp['result']:
-        # Extract symbol names
-        symbols = [item['symbol'] for item in resp['result']['list'] if item['status'] == 'Trading']
-        symbols.sort()
-        return symbols
-    return ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+    # Extract symbols from the top 20
+    symbols = [item['symbol'] for item in market_data]
+    return symbols
 
 @app.get("/api/market_watch")
 async def get_market_watch(db: Session = Depends(get_db)):
+    """
+    Fetches market data and returns the Top 20 pairs by 24h Turnover (USDT Volume).
+    """
     settings = db.query(Settings).first()
     key = settings.api_key if settings else None
     secret = settings.api_secret if settings else None
@@ -268,20 +270,28 @@ async def get_market_watch(db: Session = Depends(get_db)):
     data = []
     if resp and 'result' in resp and 'list' in resp['result']:
         for item in resp['result']['list']:
-            # Basic fields: symbol, lastPrice, price24hPcnt
+            # Filter for USDT pairs only
+            if not item['symbol'].endswith('USDT'):
+                continue
+
             try:
                 change = float(item.get('price24hPcnt', 0)) * 100
+                turnover = float(item.get('turnover24h', 0)) # Volume in USDT
+
                 data.append({
                     'symbol': item['symbol'],
                     'price': item['lastPrice'],
-                    'change': f"{change:.2f}"
+                    'change': f"{change:.2f}",
+                    'turnover': turnover
                 })
             except:
                 continue
 
-    # Sort by volume or symbol? Let's sort by symbol for now, or maybe most volatile?
-    # Let's return all, frontend handles display limit
-    return data
+    # Sort by 24h Turnover (Volume) Descending
+    data.sort(key=lambda x: x['turnover'], reverse=True)
+
+    # Return Top 20
+    return data[:20]
 
 @app.get("/api/chart_data")
 async def get_chart_data(symbol: str = "BTCUSDT"):

@@ -51,10 +51,9 @@
                                 <option value="{{ s.id }}">{{ s.name }} (Gen {{ s.generation }})</option>
                                 {% endfor %}
                             </select>
-                            <select class="form-select bg-black text-white border-secondary" name="symbol" style="max-width: 120px;">
-                                <option value="BTCUSDT">BTC</option>
-                                <option value="ETHUSDT">ETH</option>
-                                <option value="SOLUSDT">SOL</option>
+                            <select class="form-select bg-black text-white border-secondary" name="symbol" id="labSymbolSelect" style="max-width: 120px;">
+                                <!-- Populated dynamically -->
+                                <option value="BTCUSDT">BTCUSDT</option>
                             </select>
                          </div>
                     </div>
@@ -377,11 +376,41 @@
     loadStrategyMatrix(); // Load Matrix
     setInterval(updateMarketScan, 10000);
 
-    // Set Default End Date to Today
-    document.addEventListener("DOMContentLoaded", function() {
+    // Set Default End Date to Today and Pre-select Symbol
+    document.addEventListener("DOMContentLoaded", async function() {
+        // Date
         const today = new Date().toISOString().split('T')[0];
         const dateInput = document.getElementById('labEndDate');
         if(dateInput) dateInput.value = today;
+
+        // Load Symbols into Workbench
+        const symbolSelect = document.getElementById('labSymbolSelect');
+        try {
+            const res = await fetch('/api/symbols');
+            const symbols = await res.json();
+            if (symbols && symbols.length > 0) {
+                symbolSelect.innerHTML = '';
+                symbols.forEach(sym => {
+                    const opt = document.createElement('option');
+                    opt.value = sym;
+                    opt.text = sym; // or sym.replace('USDT', '')
+                    symbolSelect.appendChild(opt);
+                });
+            }
+        } catch(e) {
+            console.error("Error loading symbols", e);
+        }
+
+        // Parse URL Param ?symbol=...
+        const urlParams = new URLSearchParams(window.location.search);
+        const symbolParam = urlParams.get('symbol');
+        if (symbolParam) {
+            // Wait for symbols to populate? Or set value directly (if not strictly matching)
+            // It's safer to wait or assume it exists.
+            setTimeout(() => {
+                if(symbolSelect) symbolSelect.value = symbolParam;
+            }, 500);
+        }
     });
 </script>
 {% endblock %}
