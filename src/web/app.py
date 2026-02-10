@@ -542,6 +542,9 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
     # Map strategy_id -> best result (by ROI)
     stats_map = {}
     for res in all_results:
+        if res.roi is None:
+            continue
+
         if res.strategy_id not in stats_map:
             stats_map[res.strategy_id] = res
         else:
