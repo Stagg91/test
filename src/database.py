@@ -15,6 +15,9 @@ class Settings(Base):
     is_active = Column(Boolean, default=False)
     auto_evolve = Column(Boolean, default=False)
     last_evolution_time = Column(Float, default=0.0)
+    evolution_lookback_value = Column(Integer, default=3)
+    evolution_lookback_unit = Column(String, default="Months")
+    evolution_interval = Column(Integer, default=30) # Minutes
 
 class User(Base):
     __tablename__ = 'users'
@@ -124,6 +127,16 @@ def init_db():
                 except Exception as e:
                     print(f"Migration Error: {e}")
 
+        # Check for parent_id (New Migration)
+        if "parent_id" not in columns:
+             print("Migrating strategies table: adding parent_id...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE strategies ADD COLUMN parent_id INTEGER DEFAULT NULL"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"Migration Error: {e}")
+
     # Check settings schema
     if inspector.has_table("settings"):
         columns = [c['name'] for c in inspector.get_columns("settings")]
@@ -136,5 +149,26 @@ def init_db():
                     conn.commit()
                 except Exception as e:
                     print(f"Migration Error: {e}")
+
+        # Check for evolution_lookback (New Migration)
+        if "evolution_lookback_value" not in columns:
+             print("Migrating settings table: adding lookback config...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_lookback_value INTEGER DEFAULT 3"))
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_lookback_unit VARCHAR DEFAULT 'Months'"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+        # Check for evolution_interval
+        if "evolution_interval" not in columns:
+             print("Migrating settings table: adding evolution_interval...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_interval INTEGER DEFAULT 30"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
 
     Base.metadata.create_all(bind=engine)

@@ -42,9 +42,13 @@ def evolution_loop():
             if settings and settings.auto_evolve:
                 now = time.time()
                 last_run = settings.last_evolution_time or 0.0
-                # Run every 4 hours = 14400 seconds
-                if now - last_run > 14400:
-                    loop.run_until_complete(LabLogger.log("EVO", "Auto-Evolution Triggered."))
+
+                # Dynamic Interval
+                interval_minutes = settings.evolution_interval if settings.evolution_interval else 30
+                interval_seconds = interval_minutes * 60
+
+                if now - last_run > interval_seconds:
+                    loop.run_until_complete(LabLogger.log("EVO", f"Auto-Evolution Triggered (Interval: {interval_minutes}m)."))
                     # Update last run immediately
                     settings.last_evolution_time = now
                     db.commit()
@@ -65,13 +69,27 @@ def evolution_loop():
                     max_gen_strat = db.query(Strategy).order_by(Strategy.generation.desc()).first()
                     current_gen = max_gen_strat.generation if max_gen_strat else 0
 
+                    # Calculate Start Time based on Settings
+                    lookback_val = settings.evolution_lookback_value or 3
+                    lookback_unit = settings.evolution_lookback_unit or "Months"
+
+                    seconds_per_unit = {
+                        "Hours": 3600,
+                        "Days": 86400,
+                        "Weeks": 604800,
+                        "Months": 2592000,
+                        "Years": 31536000
+                    }
+                    seconds_back = lookback_val * seconds_per_unit.get(lookback_unit, 2592000)
+                    start_ts = int((now - seconds_back) * 1000)
+
                     if current_gen == 0:
                          # Initial Gen
                          loop.run_until_complete(breeder.create_generation_zero(count=3))
-                         loop.run_until_complete(breeder.evaluate_population(generation=0, symbol=target_symbol))
+                         loop.run_until_complete(breeder.evaluate_population(generation=0, symbol=target_symbol, start_time=start_ts))
                     else:
                          # Evolve
-                         loop.run_until_complete(breeder.evaluate_population(generation=current_gen, symbol=target_symbol))
+                         loop.run_until_complete(breeder.evaluate_population(generation=current_gen, symbol=target_symbol, start_time=start_ts))
                          loop.run_until_complete(breeder.breed_next_generation(current_gen=current_gen, symbol=target_symbol))
 
                          # Promotion Logic (Fitness Threshold)

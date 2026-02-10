@@ -49,11 +49,24 @@ class IndicatorEngine:
                 result = method(df['close'], **kwargs)
 
             if isinstance(result, pd.Series):
-                df[indicator_name] = result
+                # If name conflict or default name logic
+                col_name = kwargs.get('col_name', f"{indicator_name}")
+                df[col_name] = result
             elif isinstance(result, pd.DataFrame):
                 df = pd.concat([df, result], axis=1)
 
         except Exception as e:
             print(f"Error adding custom indicator {indicator_name}: {e}")
+            # Ensure columns exist even if error, to prevent 'not defined' crashes in logic
+            # This is a fallback to allow the backtest to run (producing 0 results likely)
+            try:
+                if indicator_name == 'adx':
+                    length = kwargs.get('length', 14)
+                    df[f'ADX_{length}'] = 0.0
+                    df[f'DMP_{length}'] = 0.0
+                    df[f'DMN_{length}'] = 0.0
+                # Add others if needed
+            except:
+                pass
 
         return df
