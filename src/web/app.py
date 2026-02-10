@@ -669,6 +669,9 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
 
     import json
     chart_json = None
+    trades = []
+    equity_curve = []
+
     try:
         metrics = json.loads(res.metrics_json)
         # Handle if metrics are nested under 'test' (walk-forward) or flat (legacy/run_strategy_instance)
@@ -681,37 +684,33 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         equity_curve = details.get('equity_curve', [])
 
         # Generate Chart if Strategy is JSON type
-        strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
-        if strat and strat.content_json:
-             # Need to re-run to get signals for chart?
-             # Or we could have stored chart_json in metrics? Storing full chart is heavy.
-             # Better to re-run on demand if data matches?
-             # But fetching data exactly as backtest is tricky if date range not saved precisely in DB
-             # DB has start/end date string.
+        try:
+            strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
+            if strat and strat.content_json:
+                 # Re-fetch data
+                 de = DataEngine()
+                 ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
+                 ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
 
-             # Re-fetch data
-             de = DataEngine()
-             ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
-             ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
+                 df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
 
-             # Fetch a bit more context? Or exact.
-             df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
+                 if not df.empty:
+                     from src.strategy_parser import StrategyParser
+                     parser = StrategyParser()
+                     recipe = StrategyRecipe(**strat.content_json)
+                     df_res = parser.parse_and_execute(df, recipe)
 
-             if not df.empty:
-                 from src.strategy_parser import StrategyParser
-                 parser = StrategyParser()
-                 recipe = StrategyRecipe(**strat.content_json)
-                 df_res = parser.parse_and_execute(df, recipe)
-
-                 chart_json = ChartGenerator.generate_chart_json(
-                     df_res,
-                     indicators=[ind.col_name or ind.name for ind in recipe.indicators]
-                 )
+                     chart_json = ChartGenerator.generate_chart_json(
+                         df_res,
+                         indicators=[ind.col_name or ind.name for ind in recipe.indicators]
+                     )
+        except Exception as e:
+            print(f"Chart Generation Error: {e}")
+            traceback.print_exc()
 
     except Exception as e:
         print(f"Error loading result details: {e}")
-        trades = []
-        equity_curve = []
+        traceback.print_exc()
 
     return templates.TemplateResponse("backtest_result.html", {
         "request": request,

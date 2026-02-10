@@ -44,14 +44,10 @@ class ChartGenerator:
 
                     if is_oscillator:
                         # Add a 3rd row dynamically? Or just put in main for now with secondary axis?
-                        # Let's stick to overlaying purely price-based ones (SMA, EMA, BB)
-                        if not is_oscillator:
-                            fig.add_trace(go.Scatter(
-                                x=df['startTime'],
-                                y=df[ind],
-                                line=dict(color=colors[i % len(colors)], width=1),
-                                name=ind
-                            ), row=1, col=1)
+                        # For now, let's overlay them but this might mess up the scale.
+                        # Ideally should be on secondary Y axis.
+                        # Skipping oscillators on main chart for now to avoid scale issues.
+                        pass
                     else:
                         # SMA, EMA, BB
                         fig.add_trace(go.Scatter(
