@@ -56,12 +56,17 @@ class StrategyParser:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
+                        # For DF results (MACD, BB), we check if adding prefix causes redundancy.
+                        # e.g. if col_name="ADX_14" and columns are ["ADX_14", "DMP_14"], adding prefix makes "ADX_14_ADX_14".
+
+                        # Check if any column ALREADY starts with the col_name
+                        starts_with_colname = any(col.startswith(ind.col_name) for col in result.columns)
+
+                        if not starts_with_colname:
+                             result = result.add_prefix(f"{ind.col_name}_")
+
+                        # If it already starts with it (or contains it), we assume TALib named it correctly
+                        # and we just concat.
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
