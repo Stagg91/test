@@ -70,11 +70,40 @@ class Backtester:
 
             df['trade_id'] = (trades_mask == 1).cumsum()
             active_trades = df[df['position'] == 1]
+            trade_list = []
+
             if not active_trades.empty:
                 trade_returns_exact = active_trades.groupby('trade_id')['strategy_return'].apply(lambda x: (1 + x).prod() - 1)
                 wins = (trade_returns_exact > 0).sum()
                 total_trades = entries
                 win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+
+                # Generate Trade List for UI
+                # Group by trade_id to get Start (Entry) and End (Exit) for each trade
+                trades_grouped = active_trades.groupby('trade_id')
+                for tid, group in trades_grouped:
+                    try:
+                        entry_row = group.iloc[0]
+                        exit_row = group.iloc[-1]
+
+                        # Calculate PnL for this specific trade
+                        pnl_pct = (1 + group['strategy_return']).prod() - 1
+
+                        # Handle missing startTime (e.g. in tests)
+                        start_ts = entry_row.get('startTime', entry_row.name)
+                        end_ts = exit_row.get('startTime', exit_row.name)
+
+                        trade_list.append({
+                            "trade_id": int(tid),
+                            "entry_time": str(start_ts),
+                            "entry_price": float(entry_row['close']), # Approximation (close of signal candle)
+                            "exit_time": str(end_ts),
+                            "exit_price": float(exit_row['close']),
+                            "pnl_percent": float(pnl_pct * 100),
+                            "direction": "Long" # Currently only Longs
+                        })
+                    except Exception as e:
+                        print(f"Error extracting trade {tid}: {e}")
             else:
                 win_rate = 0
                 total_trades = 0
@@ -91,7 +120,8 @@ class Backtester:
                 "win_rate": win_rate,
                 "total_trades": total_trades,
                 "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "equity_curve": df['equity'].tolist(),
+                "trades": trade_list
             }
 
         except Exception as e:
