@@ -18,6 +18,7 @@ class Settings(Base):
     evolution_lookback_value = Column(Integer, default=3)
     evolution_lookback_unit = Column(String, default="Months")
     evolution_interval = Column(Integer, default=30) # Minutes
+    backtest_pairs = Column(String, default="BTCUSDT") # Comma separated
 
 class User(Base):
     __tablename__ = 'users'
@@ -167,6 +168,16 @@ def init_db():
              with engine.connect() as conn:
                 try:
                     conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_interval INTEGER DEFAULT 30"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+        # Check for backtest_pairs
+        if "backtest_pairs" not in columns:
+             print("Migrating settings table: adding backtest_pairs...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN backtest_pairs VARCHAR DEFAULT 'BTCUSDT'"))
                     conn.commit()
                 except Exception as e:
                      print(f"Migration Error: {e}")

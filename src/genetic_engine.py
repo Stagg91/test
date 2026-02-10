@@ -7,6 +7,26 @@ from src.strategies.schemas import StrategyRecipe
 import time
 import json
 import traceback
+import concurrent.futures
+import asyncio
+
+# Standalone wrapper for pickling
+def evaluate_strategy_wrapper(strategy_json, df_dict, initial_balance=10000.0):
+    """
+    Wrapper for parallel execution.
+    df_dict: dict of {col: series} or DataFrame turned to dict for safety?
+    Actually DataFrame is picklable.
+    """
+    try:
+        # Reconstruct recipe
+        recipe = StrategyRecipe(**strategy_json)
+        # Reconstruct Backtester
+        # We pass DataFrame directly.
+        bt = Backtester(df_dict, initial_balance)
+        return bt.run_vectorized_backtest(recipe)
+    except Exception as e:
+        # traceback.print_exc()
+        return {"error": str(e), "roi_percent": -100, "max_drawdown": -100, "fitness": -100}
 
 class GeneticBreeder:
     def __init__(self, gemini_api_key=None):
@@ -15,6 +35,7 @@ class GeneticBreeder:
 
         self.api_key = gemini_api_key or (settings.gemini_api_key if settings else None)
         self.ai_engine = AIEngine(self.api_key) if self.api_key else None
+        self.settings = settings
 
     async def create_generation_zero(self, prompt="Create a robust profitable trend following strategy", count=3):
         """
@@ -33,7 +54,7 @@ class GeneticBreeder:
                 if recipe:
                     s_ai = Strategy(
                         name=recipe.name,
-                        code="", # No longer using raw python code for execution
+                        code="",
                         content_json=recipe.model_dump(),
                         class_name="JSONStrategy",
                         type="ai_gen",
@@ -46,7 +67,6 @@ class GeneticBreeder:
                 await LabLogger.log("ERROR", f"Gen0 Error: {e}")
                 traceback.print_exc()
 
-        # Save to DB
         for s in strategies:
             self.db.add(s)
         self.db.commit()
@@ -55,107 +75,166 @@ class GeneticBreeder:
     async def evaluate_population(self, generation=0, symbol="BTCUSDT", start_time=None):
         """
         Runs vectorized backtests on all strategies of a specific generation.
+        Supports multiple symbols if configured in Settings.
+        Uses ProcessPoolExecutor for parallel processing.
         """
         strategies = self.db.query(Strategy).filter(Strategy.generation == generation).all()
-        await LabLogger.log("EVO", f"Evaluating {len(strategies)} strategies for Gen {generation} on {symbol}...")
+
+        # Determine target symbols
+        target_symbols = [symbol]
+        # Check settings
+        # Note: 'backtest_pairs' might not exist yet on DB object until we reload/migrate
+        # But we can try to access it if the object has it, or fetch raw
+        if self.settings and hasattr(self.settings, 'backtest_pairs') and self.settings.backtest_pairs:
+             # Expect comma separated
+             target_symbols = [s.strip() for s in self.settings.backtest_pairs.split(",") if s.strip()]
+
+        await LabLogger.log("EVO", f"Evaluating {len(strategies)} strategies for Gen {generation} on {target_symbols}...")
 
         de = DataEngine()
-        if start_time:
-             # Fetch data from start_time
-             df = de.fetch_ohlcv(symbol, interval="60", start_time=start_time)
-        else:
-             # Default fallback
-             df = de.fetch_ohlcv(symbol, interval="60", limit=1000)
+        results_summary = []
 
-        if df.empty:
-            await LabLogger.log("ERROR", f"No data for {symbol}")
-            return []
+        for sym in target_symbols:
+            await LabLogger.log("EVO", f"Processing Symbol: {sym}")
 
-        bt = Backtester(df, initial_balance=10000)
-        results = []
+            # 1. Fetch Data
+            if start_time:
+                 df = de.fetch_ohlcv(sym, interval="60", start_time=start_time)
+            else:
+                 df = de.fetch_ohlcv(sym, interval="60", limit=1000)
 
-        for s in strategies:
-            try:
-                # Load Recipe
-                if not s.content_json:
-                    # Legacy or empty?
-                    continue
+            if df.empty:
+                await LabLogger.log("ERROR", f"No data for {sym}")
+                continue
 
-                recipe = StrategyRecipe(**s.content_json)
+            # 2. Prepare Parallel Execution
+            valid_strats = [s for s in strategies if s.content_json]
+            if not valid_strats:
+                continue
 
-                # Run Backtest
-                res = bt.run_vectorized_backtest(recipe)
+            # Use ProcessPoolExecutor
+            # We need to run sync code in process, so we use loop.run_in_executor
+            loop = asyncio.get_running_loop()
+
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                tasks = []
+                for s in valid_strats:
+                    # Pass the JSON, not the object
+                    task = loop.run_in_executor(
+                        executor,
+                        evaluate_strategy_wrapper,
+                        s.content_json,
+                        df,
+                        10000.0
+                    )
+                    tasks.append(task)
+
+                # Await all
+                results = await asyncio.gather(*tasks)
+
+            # 3. Save Results
+            for i, res in enumerate(results):
+                strat = valid_strats[i]
+
+                # Check for error
+                if "error" in res:
+                     # await LabLogger.log("ERROR", f"Strat {strat.id} failed: {res['error']}")
+                     continue
 
                 # Save Result
                 br = BacktestResult(
-                    strategy_id=s.id,
-                    symbol=symbol,
+                    strategy_id=strat.id,
+                    symbol=sym,
                     start_date=str(df.iloc[0]['startTime']),
                     end_date=str(df.iloc[-1]['startTime']),
-                    roi=res['roi_percent'],
-                    sharpe=res['sharpe'],
-                    max_drawdown=res['max_drawdown'],
-                    win_rate=res['win_rate'],
-                    trades_count=res['total_trades'],
-                    metrics_json=json.dumps(res), # Full details including fitness
+                    roi=res.get('roi_percent', 0),
+                    sharpe=res.get('sharpe', 0),
+                    max_drawdown=res.get('max_drawdown', 0),
+                    win_rate=res.get('win_rate', 0),
+                    trades_count=res.get('total_trades', 0),
+                    metrics_json=json.dumps(res),
                     timestamp=time.time()
                 )
                 self.db.add(br)
-                results.append((s, res))
+                results_summary.append((strat, res))
 
-                await LabLogger.log("EVO", f"Evaluated {s.name}: ROI={res['roi_percent']:.2f}%, DD={res['max_drawdown']:.2f}%, Fit={res['fitness']:.2f}")
-
-            except Exception as e:
-                await LabLogger.log("ERROR", f"Error evaluating strategy {s.id}: {e}")
-                traceback.print_exc()
+                # Log simplified
+                # await LabLogger.log("EVO", f"Completed {strat.name} on {sym}: ROI={br.roi:.2f}%")
 
         self.db.commit()
-        return results
+        await LabLogger.log("EVO", f"Generation {generation} evaluation complete.")
+        return results_summary
 
     async def breed_next_generation(self, current_gen=0, symbol="BTCUSDT"):
         """
         Selects top performers (Fitness) and mutates them.
+        Fitness is averaged across all pairs if multiple were tested.
         """
         if not self.ai_engine:
             return
 
-        # 1. Get Top 3 Results by Fitness
-        # We need to calculate fitness manually or query?
-        # Since 'fitness' isn't a column, we query all results for this gen and sort in python.
-
-        results = self.db.query(BacktestResult, Strategy)\
-            .join(Strategy, BacktestResult.strategy_id == Strategy.id)\
-            .filter(Strategy.generation == current_gen)\
-            .all()
+        # 1. Fetch all results for this generation
+        results = self.db.query(BacktestResult).join(Strategy).filter(Strategy.generation == current_gen).all()
 
         if not results:
             await LabLogger.log("EVO", "No results to breed from.")
             return
 
-        # Calculate fitness and sort
-        # Fitness = ROI / abs(MaxDD)
-        def calc_fitness(br):
-            dd = abs(br.max_drawdown)
-            if dd < 0.001: dd = 0.001
-            return br.roi / dd
+        # 2. Aggregating Fitness per Strategy
+        # Strategy ID -> [Results]
+        strat_map = {}
+        for br in results:
+            if br.strategy_id not in strat_map:
+                strat_map[br.strategy_id] = []
+            strat_map[br.strategy_id].append(br)
 
-        sorted_results = sorted(results, key=lambda x: calc_fitness(x[0]), reverse=True)
-        top_performers = sorted_results[:3]
+        # Calculate Average Fitness
+        # Fitness = ROI / abs(DD)
+        fitness_scores = []
+        for sid, br_list in strat_map.items():
+            total_fitness = 0
+            count = 0
+            valid_strat = False
 
+            for br in br_list:
+                dd = abs(br.max_drawdown)
+                if dd < 0.001: dd = 0.001
+                fit = br.roi / dd
+                total_fitness += fit
+                count += 1
+                # If ANY backtest had > 0 trades, considered valid?
+                # Ideally we want robust strategies that trade.
+                if br.trades_count > 0:
+                    valid_strat = True
+
+            avg_fitness = total_fitness / count if count > 0 else -100
+
+            # Penalize if no trades?
+            if not valid_strat:
+                avg_fitness = -100
+
+            fitness_scores.append((sid, avg_fitness))
+
+        # Sort
+        fitness_scores.sort(key=lambda x: x[1], reverse=True)
+
+        # Get Top 3 Strategy IDs
+        top_ids = [x[0] for x in fitness_scores[:3]]
+
+        # Fetch Strategy Objects
         parents = []
-        for br, strat in top_performers:
-            if strat.content_json:
-                parents.append(StrategyRecipe(**strat.content_json))
+        for sid in top_ids:
+            s = self.db.query(Strategy).filter(Strategy.id == sid).first()
+            if s and s.content_json:
+                parents.append(StrategyRecipe(**s.content_json))
 
         if not parents:
+            await LabLogger.log("EVO", "No valid parents found.")
             return
 
         await LabLogger.log("EVO", f"Breeding from top {len(parents)} strategies (Gen {current_gen})...")
-
         next_gen = current_gen + 1
-
-        # Request Mutation
-        feedback = "Reduce Max Drawdown while maintaining profitability."
+        feedback = "Reduce Max Drawdown while maintaining profitability across multiple pairs."
 
         # Create 3 Children
         for i in range(3):
@@ -163,9 +242,7 @@ class GeneticBreeder:
                 child_recipe = await self.ai_engine.mutate_strategy_recipe(parents, feedback)
 
                 if child_recipe:
-                    # Rename to avoid duplicate names if AI forgets
                     child_recipe.name = f"Gen{next_gen}_Child_{i}_{child_recipe.name}"
-
                     child_strat = Strategy(
                         name=child_recipe.name,
                         code="",
@@ -173,7 +250,7 @@ class GeneticBreeder:
                         class_name="JSONStrategy",
                         type="evolved",
                         generation=next_gen,
-                        parent_id=top_performers[0][1].id, # Mark top parent as primary
+                        parent_id=top_ids[0],
                         created_at=time.time()
                     )
                     self.db.add(child_strat)
@@ -183,7 +260,4 @@ class GeneticBreeder:
                 await LabLogger.log("ERROR", f"Mutation failed: {e}")
 
         self.db.commit()
-
-        # Immediate Evaluation of New Gen?
-        # The main loop calls evaluate, so we just finish here.
         await LabLogger.log("EVO", f"Generation {next_gen} created.")

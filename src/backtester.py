@@ -70,11 +70,74 @@ class Backtester:
 
             df['trade_id'] = (trades_mask == 1).cumsum()
             active_trades = df[df['position'] == 1]
+
+            detailed_trades = []
+
             if not active_trades.empty:
-                trade_returns_exact = active_trades.groupby('trade_id')['strategy_return'].apply(lambda x: (1 + x).prod() - 1)
+                # Calculate aggregate returns per trade
+                trade_groups = active_trades.groupby('trade_id')
+                trade_returns_exact = trade_groups['strategy_return'].apply(lambda x: (1 + x).prod() - 1)
+
                 wins = (trade_returns_exact > 0).sum()
                 total_trades = entries
                 win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+
+                # Extract Detailed Trade Log
+                for tid, group in trade_groups:
+                    try:
+                        # Entry is the first candle of the group
+                        entry_row = group.iloc[0]
+                        # Exit is the last candle of the group
+                        # NOTE: In vectorized backtesting, we exit at the close of the last candle where position=1
+                        # Wait, if position becomes 0 at index i, it means we sold at index i (or i-1 depending on shift logic).
+                        # Logic above: df['strategy_return'] = df['position'].shift(1) * df['pct_change']
+                        # This implies we hold the asset during the candle where position=1 (from previous signal).
+
+                        exit_row = group.iloc[-1]
+
+                        # Calculating PnL
+                        # Compounded return for this trade sequence
+                        pnl_pct = (1 + group['strategy_return']).prod() - 1
+
+                        # Approximate Entry/Exit Prices (Close prices)
+                        # Since we use Close-to-Close returns, let's use those.
+                        entry_price = entry_row['open'] # Approximation? No, let's use Close of previous candle if possible?
+                        # Actually, vectorized backtest usually assumes entry at Close of signal candle (or Open of next).
+                        # Let's stick to Close of the period for simplicity as 'price' reference.
+                        # Better: Entry Price = entry_row['close'] / (1 + entry_row['pct_change']) ?
+                        # Let's just use the Close price of the first candle in the trade as "Entry Reference"
+                        # and Close of last candle as "Exit Reference".
+                        # This might not match PnL exactly due to gap/slippage assumptions in vectorization, but good enough for UI.
+
+                        entry_price = entry_row['close']
+                        exit_price = exit_row['close']
+
+                        # PnL $ (Hypothetical on 1 unit? or scaled to balance?)
+                        # We don't track per-trade dollar amount easily in vectorized without simulating balance path.
+                        # But we can approximate: PnL $ = Balance_at_Entry * PnL_Pct
+                        # Let's just return PnL % and let frontend handle basic calc or show %
+                        # User asked for PnL $. Let's try to get balance at start of trade.
+                        balance_at_entry = df.loc[entry_row.name, 'equity'] / (1 + entry_row['strategy_return'])
+                        pnl_abs = balance_at_entry * pnl_pct
+
+                        # Timestamps
+                        # Convert ms to datetime string
+                        ts_entry = pd.to_datetime(entry_row['startTime'], unit='ms').strftime('%Y-%m-%d %H:%M')
+                        ts_exit = pd.to_datetime(exit_row['startTime'], unit='ms').strftime('%Y-%m-%d %H:%M')
+
+                        detailed_trades.append({
+                            "trade_id": int(tid),
+                            "timestamp": ts_entry, # Use Entry Time as main timestamp
+                            "entry_time": ts_entry,
+                            "exit_time": ts_exit,
+                            "entry": float(entry_price),
+                            "exit": float(exit_price),
+                            "pnl": float(pnl_pct * 100),
+                            "pnl_abs": float(pnl_abs)
+                        })
+                    except Exception as e:
+                        # self._log(f"Error parsing trade {tid}: {e}")
+                        continue
             else:
                 win_rate = 0
                 total_trades = 0
@@ -91,7 +154,8 @@ class Backtester:
                 "win_rate": win_rate,
                 "total_trades": total_trades,
                 "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "equity_curve": df['equity'].tolist(),
+                "trades": detailed_trades
             }
 
         except Exception as e:

@@ -35,7 +35,14 @@
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
-      <ul class="navbar-nav ms-auto">
+      <ul class="navbar-nav ms-auto align-items-center">
+        <!-- Resource Monitor -->
+        <li class="nav-item me-3 d-none d-lg-block">
+             <span class="badge bg-dark border border-secondary text-warning font-monospace" id="sys-monitor" style="font-size: 0.8em;">
+                <i class="fa-solid fa-microchip"></i> CPU: -% | RAM: -%
+             </span>
+        </li>
+
         <li class="nav-item"><a class="nav-link" href="/"><i class="fa-solid fa-chart-line"></i> Dashboard</a></li>
         <li class="nav-item"><a class="nav-link fw-bold text-info" href="/lab"><i class="fa-solid fa-flask-vial"></i> Strategy Lab</a></li>
         <li class="nav-item"><a class="nav-link" href="/strategies"><i class="fa-solid fa-layer-group"></i> Library</a></li>
@@ -110,12 +117,26 @@ function connectWS() {
     };
 }
 
+// Resource Monitor Polling
+setInterval(async () => {
+    const el = document.getElementById('sys-monitor');
+    if(!el) return;
+    try {
+        const res = await fetch('/api/resources');
+        if(res.ok) {
+            const data = await res.json();
+            el.innerHTML = `<i class="fa-solid fa-microchip"></i> CPU: ${data.cpu_percent}% | RAM: ${data.memory_percent}%`;
+            // Color code
+            if(data.cpu_percent > 80 || data.memory_percent > 80) el.className = "badge bg-danger border border-danger text-white font-monospace";
+            else el.className = "badge bg-dark border border-secondary text-warning font-monospace";
+        }
+    } catch(e) {}
+}, 5000);
+
 function logUIAction(action, details) {
-    // Send to server (optional) or just display locally
-    // For now, let's display locally to satisfy "visual feedback" immediately
     const timestamp = new Date().toLocaleTimeString();
-    const msg = `[${timestamp}] [UI] ${action} | ${JSON.stringify(details)}`;
-    appendLog(msg);
+    // const msg = `[${timestamp}] [UI] ${action} | ${JSON.stringify(details)}`;
+    // appendLog(msg);
 }
 
 // Start connection
@@ -138,19 +159,26 @@ document.addEventListener('click', (e) => {
 function showToast(message, type='info') {
     const container = document.getElementById('toastContainer');
     const id = 'toast_' + Date.now();
-    const html = `
-    <div id="${id}" class="toast align-items-center text-white bg-${type === 'error' ? 'danger' : 'success'} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+    const bgClass = type === 'error' ? 'bg-danger' : 'bg-success';
+
+    // Create element
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = `toast align-items-center text-white ${bgClass} border-0`;
+    div.role = "alert";
+    div.ariaLive = "assertive";
+    div.ariaAtomic = "true";
+    div.innerHTML = `
         <div class="d-flex">
             <div class="toast-body">
                 ${message}
             </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
-    </div>
     `;
-    container.insertAdjacentHTML('beforeend', html);
-    const toastEl = document.getElementById(id);
-    const toast = new bootstrap.Toast(toastEl);
+    container.appendChild(div);
+
+    const toast = new bootstrap.Toast(div);
     toast.show();
 }
 
