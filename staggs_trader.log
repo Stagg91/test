@@ -58,3 +58,164 @@ INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [15630]
+--- LOGGING STARTED at Tue Feb 10 04:02:41 2026 ---
+Bot loop started...Evolution loop started...
+
+Data Downloader: Starting Sync...
+INFO:     Started server process [10606]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Error fetching instruments: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 04:02:41).
+Request → GET https://api-testnet.bybit.com/v5/market/instruments-info: category=linear&limit=1000.
+Data Downloader: Could not fetch symbols. Using default.
+Syncing BTCUSDT...
+Error fetching history for BTCUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 04:02:41).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770696161851&interval=60&limit=200&symbol=BTCUSDT.
+Syncing ETHUSDT...
+Error fetching history for ETHUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 04:02:41).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770696161866&interval=60&limit=200&symbol=ETHUSDT.
+Data Downloader: Sync Complete.
+[04:03:18] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:47540 - "GET /setup HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47540 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47546 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:47540 - "GET /static/sw.js HTTP/1.1" 200 OK
+[04:03:20] [API] INCOMING: POST /setup
+(trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+Setup Error: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+Traceback (most recent call last):
+  File "/app/src/web/app.py", line 155, in setup
+    hashed_pw = get_password_hash(password)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/auth.py", line 16, in get_password_hash
+    return pwd_context.hash(password)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/context.py", line 2258, in hash
+    return record.hash(secret, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 779, in hash
+    self.checksum = self._calc_checksum(secret)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+    self._stub_requires_backend()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+    cls.set_backend()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+    return owner.set_backend(name, dryrun=dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+    return cls.set_backend(name, dryrun=dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+    cls._set_backend(name, dryrun)
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+    super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+    ok = loader(**kwds)
+         ^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+    return mixin_cls._finalize_backend_mixin(name, dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+    if detect_wrap_bug(IDENT_2A):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+    if verify(secret, bug_hash):
+       ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 792, in verify
+    return consteq(self._calc_checksum(secret), chk)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+    hash = _bcrypt.hashpw(secret, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+
+ERROR:root:Setup Error: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+Traceback (most recent call last):
+  File "/app/src/web/app.py", line 155, in setup
+    hashed_pw = get_password_hash(password)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/auth.py", line 16, in get_password_hash
+    return pwd_context.hash(password)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/context.py", line 2258, in hash
+    return record.hash(secret, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 779, in hash
+    self.checksum = self._calc_checksum(secret)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+    self._stub_requires_backend()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+    cls.set_backend()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+    return owner.set_backend(name, dryrun=dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+    return cls.set_backend(name, dryrun=dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+    cls._set_backend(name, dryrun)
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+    super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+    ok = loader(**kwds)
+         ^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+    return mixin_cls._finalize_backend_mixin(name, dryrun)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+    if detect_wrap_bug(IDENT_2A):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+    if verify(secret, bug_hash):
+       ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/utils/handlers.py", line 792, in verify
+    return consteq(self._calc_checksum(secret), chk)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+    hash = _bcrypt.hashpw(secret, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+
+INFO:     127.0.0.1:47540 - "POST /setup HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:47558 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[04:03:21] [API] INCOMING: GET /login
+INFO:     127.0.0.1:47540 - "GET /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:47572 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[04:03:21] [API] INCOMING: POST /login
+[04:03:21] [AUTH] Login attempt for user: admin
+[04:03:21] [AUTH] Login failed for admin
+INFO:     127.0.0.1:47540 - "POST /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:47574 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+--- LOGGING STARTED at Tue Feb 10 04:03:22 2026 ---
+Bot loop started...Evolution loop started...Data Downloader: Starting Sync...
+
+
+INFO:     Started server process [11723]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): [errno 98] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+[04:03:22] [API] INCOMING: GET /strategies
+INFO:     127.0.0.1:47540 - "GET /strategies HTTP/1.1" 307 Temporary Redirect
+[04:03:22] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:47540 - "GET /setup HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:47586 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     connection closed
