@@ -84,6 +84,9 @@
                 <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#aiStrategyModal" onclick="console.log('Opened AI Modal')">
                     <i class="fa-solid fa-plus"></i> New AI Idea
                 </button>
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#indicatorsModal" onclick="loadIndicators()">
+                    <i class="fa-solid fa-list-ul"></i> View Indicators
+                </button>
             </div>
         </div>
     </div>
@@ -178,6 +181,27 @@
   </div>
 </div>
 
+<!-- Indicators List Modal -->
+<div class="modal fade" id="indicatorsModal" tabindex="-1" aria-labelledby="indicatorsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content bg-dark text-light border-info">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="indicatorsModalLabel"><i class="fa-solid fa-list-ul text-info"></i> Available Indicators</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">These indicators are available for strategy generation. AI automatically selects parameters.</p>
+        <ul id="indicatorsList" class="list-group list-group-flush bg-dark">
+            <li class="list-group-item bg-dark text-muted">Loading...</li>
+        </ul>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -194,29 +218,45 @@
                 return;
             }
 
+            // Plot Risk (Drawdown) vs Reward (Equity)
+            // X-Axis: Equity ($) (User requested Equity on one axis)
+            // Y-Axis: Max Drawdown (%) (Risk)
+            // Or usually Risk (X) vs Reward (Y).
+            // User asked for "X axis is equity" and "one is drawdown".
+
             const trace = {
-                x: data.map(d => Math.abs(d.max_drawdown)), // Use absolute DD for X axis (positive)
-                y: data.map(d => d.roi),
+                x: data.map(d => d.equity),
+                y: data.map(d => Math.abs(d.max_drawdown)), // Positive Drawdown for Y axis
                 mode: 'markers',
                 type: 'scatter',
-                text: data.map(d => `<b>${d.strategy_name}</b> (ID: ${d.strategy_id})<br>Backtest #${d.backtest_id}<br>ROI: ${d.roi.toFixed(2)}%<br>DD: ${d.max_drawdown.toFixed(2)}%<br>Win Rate: ${d.win_rate.toFixed(1)}%`),
+                text: data.map(d => `<b>${d.strategy_name}</b> (ID: ${d.strategy_id})<br>Gen: ${d.generation}<br>Equity: $${d.equity.toFixed(2)}<br>ROI: ${d.roi.toFixed(2)}%<br>Max DD: ${d.max_drawdown.toFixed(2)}%`),
                 marker: {
-                    size: 10,
-                    color: data.map(d => d.roi), // Color by ROI
-                    colorscale: 'Viridis',
+                    size: 12,
+                    color: data.map(d => d.roi), // Color by ROI still good
+                    colorscale: 'Plasma',
                     colorbar: { title: 'ROI %' },
-                    line: { color: '#fff', width: 1 }
+                    line: { color: '#fff', width: 1 },
+                    opacity: 0.8
                 },
                 hovertemplate: '%{text}<extra></extra>'
             };
 
             const layout = {
+                title: 'Risk (Drawdown) vs Reward (Equity)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 font: { color: '#fff' },
-                xaxis: { title: 'Max Drawdown (%)', gridcolor: '#444' },
-                yaxis: { title: 'Total Return (ROI %)', gridcolor: '#444' },
-                margin: { t: 30, b: 40, l: 60, r: 20 },
+                xaxis: {
+                    title: 'Total Portfolio Equity ($)',
+                    gridcolor: '#444',
+                    tickprefix: '$'
+                },
+                yaxis: {
+                    title: 'Max Drawdown (%)',
+                    gridcolor: '#444',
+                    autorange: 'reversed' // Drawdown 0 is best (top), high is bad (bottom)
+                },
+                margin: { t: 40, b: 50, l: 60, r: 20 },
                 hovermode: 'closest'
             };
 
@@ -283,6 +323,25 @@
             }
         } else {
             logConsole("Error: Prompt cannot be empty.");
+        }
+    }
+
+    // 3. Load Indicators List
+    async function loadIndicators() {
+        const list = document.getElementById('indicatorsList');
+        try {
+            const res = await fetch('/api/indicators');
+            const data = await res.json();
+
+            if(data.indicators) {
+                let html = '';
+                data.indicators.forEach(ind => {
+                    html += `<li class="list-group-item bg-dark text-white border-secondary"><i class="fa-solid fa-code text-info me-2"></i> ${ind}</li>`;
+                });
+                list.innerHTML = html;
+            }
+        } catch(e) {
+            list.innerHTML = '<li class="list-group-item bg-dark text-danger">Error loading indicators.</li>';
         }
     }
 

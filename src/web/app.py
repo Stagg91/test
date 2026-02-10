@@ -920,20 +920,41 @@ async def get_strategy_matrix(db: Session = Depends(get_db)):
     results = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).all()
 
     data = []
+    # Fetch initial balance from settings or assume 10000 (default in backtest)
+    # Ideally backtest_result should store initial_balance.
+    # For now, we calculate Equity based on ROI and a standard 10k or 1k.
+    # The user enters 1000 in UI usually. Let's use 1000 for visualization or percentage.
+    # Actually, ROI is %, so Equity = 1000 * (1 + roi/100).
+    initial_balance = 1000.0
+
     for br, strat in results:
+        # Calculate Equity
+        roi = br.roi if br.roi is not None else 0.0
+        equity = initial_balance * (1 + roi / 100.0)
+
         data.append({
             "strategy_id": strat.id,
             "strategy_name": strat.name,
             "backtest_id": br.id,
-            "roi": br.roi,
-            "max_drawdown": br.max_drawdown,
-            "win_rate": br.win_rate,
+            "roi": roi,
+            "equity": equity,
+            "max_drawdown": br.max_drawdown if br.max_drawdown is not None else 0.0,
+            "win_rate": br.win_rate if br.win_rate is not None else 0.0,
             "trades": br.trades_count,
             "generation": strat.generation
         })
 
     # Sanitize to be safe (though DB floats are usually fine)
     return sanitize_json(data)
+
+@app.get("/api/indicators")
+async def get_indicators():
+    """
+    Returns a list of available technical indicators from TALib.
+    """
+    from src.ta_lib import TALib
+    methods = [method for method in dir(TALib) if not method.startswith('__') and callable(getattr(TALib, method))]
+    return {"indicators": methods}
 
 @app.get("/lab", response_class=HTMLResponse)
 async def lab_page(request: Request, db: Session = Depends(get_db)):
