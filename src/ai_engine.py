@@ -2,6 +2,8 @@ from google import genai
 from google.genai import types
 import json
 import traceback
+import time
+import asyncio
 from src.strategies.schemas import StrategyRecipe, IndicatorConfig
 from src.logger import LabLogger
 
@@ -46,48 +48,55 @@ class AIEngine:
         print(full_prompt)
         print("-----------------------------\n")
 
-        try:
-            # Note: generate_content is sync. We can wrap it or just block briefly.
-            # For true async, we'd need run_in_executor, but this is fine for now as it's a background thread.
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(include_thoughts=True),
-                    response_mime_type="application/json"
+        retries = 3
+        for attempt in range(retries):
+            try:
+                # Note: generate_content is sync. We can wrap it or just block briefly.
+                # For true async, we'd need run_in_executor, but this is fine for now as it's a background thread.
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(include_thoughts=True),
+                        response_mime_type="application/json"
+                    )
                 )
-            )
 
-            text_content = response.text
-            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)", {"raw_response": text_content})
-            print("\n--- AI RESPONSE ---")
-            print(text_content)
-            print("-------------------\n")
+                text_content = response.text
+                await LabLogger.log("AI", f"Response received ({len(text_content)} chars)", {"raw_response": text_content})
+                print("\n--- AI RESPONSE ---")
+                print(text_content)
+                print("-------------------\n")
 
-            data = json.loads(text_content)
-            recipe = StrategyRecipe(**data)
+                data = json.loads(text_content)
+                recipe = StrategyRecipe(**data)
 
-            # --- VALIDATION LOOP ---
-            is_valid, validation_msg = self.validate_strategy(recipe)
-            if not is_valid:
-                await LabLogger.log("AI", f"Strategy Validation Failed: {validation_msg}. Retrying...")
-                # We could implement a retry loop here (e.g. ask AI to fix).
-                # For now, let's just log it and return None to prevent broken strats.
-                # A better approach: "Recursively fix"
-                return await self.attempt_fix_strategy(recipe, validation_msg)
+                # --- VALIDATION LOOP ---
+                is_valid, validation_msg = self.validate_strategy(recipe)
+                if not is_valid:
+                    await LabLogger.log("AI", f"Strategy Validation Failed: {validation_msg}. Retrying...")
+                    # We could implement a retry loop here (e.g. ask AI to fix).
+                    # For now, let's just log it and return None to prevent broken strats.
+                    # A better approach: "Recursively fix"
+                    return await self.attempt_fix_strategy(recipe, validation_msg)
 
-            await LabLogger.log("AI", f"Strategy Validated: {recipe.name}")
-            return recipe
+                await LabLogger.log("AI", f"Strategy Validated: {recipe.name}")
+                return recipe
 
-        except Exception as e:
-            err_msg = str(e)
-            print(f"\n[AI ERROR] {err_msg}")
-            await LabLogger.log("AI", f"Generation Error: {err_msg}")
-            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                print("!!! GEMINI QUOTA EXCEEDED !!!")
-                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
-            traceback.print_exc()
-            return None
+            except Exception as e:
+                err_msg = str(e)
+                print(f"\n[AI ERROR] {err_msg}")
+                await LabLogger.log("AI", f"Generation Error: {err_msg}")
+
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                    print("!!! GEMINI QUOTA EXCEEDED !!!")
+                    await LabLogger.log("AI", f"!!! GEMINI QUOTA EXCEEDED !!! Retrying in {2**(attempt+1)}s...")
+                    time.sleep(2**(attempt+1)) # Exponential Backoff: 2s, 4s, 8s
+                    continue
+
+                traceback.print_exc()
+                return None
+        return None
 
     def validate_strategy(self, recipe: StrategyRecipe) -> tuple[bool, str]:
         """
@@ -191,32 +200,37 @@ class AIEngine:
         print(full_prompt)
         print("---------------------------\n")
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(include_thoughts=True),
-                    response_mime_type="application/json"
+        retries = 3
+        for attempt in range(retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(include_thoughts=True),
+                        response_mime_type="application/json"
+                    )
                 )
-            )
 
-            text_content = response.text
-            await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
-            print("\n--- AI RESPONSE ---")
-            print(text_content)
-            print("-------------------\n")
+                text_content = response.text
+                await LabLogger.log("AI", f"Response received ({len(text_content)} chars)")
+                print("\n--- AI RESPONSE ---")
+                print(text_content)
+                print("-------------------\n")
 
-            data = json.loads(text_content)
-            recipe = StrategyRecipe(**data)
-            return recipe
+                data = json.loads(text_content)
+                recipe = StrategyRecipe(**data)
+                return recipe
 
-        except Exception as e:
-            err_msg = str(e)
-            print(f"\n[AI ERROR] {err_msg}")
-            await LabLogger.log("AI", f"Error: {err_msg}")
-            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                print("!!! GEMINI QUOTA EXCEEDED !!!")
-                await LabLogger.log("AI", "!!! GEMINI QUOTA EXCEEDED !!!")
-            traceback.print_exc()
-            return None
+            except Exception as e:
+                err_msg = str(e)
+                print(f"\n[AI ERROR] {err_msg}")
+                await LabLogger.log("AI", f"Error: {err_msg}")
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                    print("!!! GEMINI QUOTA EXCEEDED !!!")
+                    await LabLogger.log("AI", f"!!! GEMINI QUOTA EXCEEDED !!! Retrying in {2**(attempt+1)}s...")
+                    time.sleep(2**(attempt+1))
+                    continue
+                traceback.print_exc()
+                return None
+        return None

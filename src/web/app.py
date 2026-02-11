@@ -228,14 +228,21 @@ async def get_symbols(db: Session = Depends(get_db)):
     testnet = settings.testnet if settings else True
 
     client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
-    resp = client.get_instruments()
+    try:
+        resp = client.get_instruments()
+        if resp and 'result' in resp and 'list' in resp['result']:
+            # Filter USDT and Trading status
+            symbols = [
+                item['symbol']
+                for item in resp['result']['list']
+                if item['status'] == 'Trading' and item['symbol'].endswith('USDT')
+            ]
+            symbols.sort()
+            return symbols
+    except Exception as e:
+        await LabLogger.log("API", f"Error fetching symbols: {e}")
 
-    if resp and 'result' in resp and 'list' in resp['result']:
-        # Extract symbol names
-        symbols = [item['symbol'] for item in resp['result']['list'] if item['status'] == 'Trading']
-        symbols.sort()
-        return symbols
-    return ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+    return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"] # Extended Fallback
 
 @app.get("/api/market_watch")
 async def get_market_watch(db: Session = Depends(get_db)):
@@ -831,3 +838,28 @@ async def lab_page(request: Request, db: Session = Depends(get_db)):
         "max_gen": max_gen,
         "best_strat": best_strat
     })
+@app.get("/api/strategy_matrix")
+async def get_strategy_matrix(db: Session = Depends(get_db)):
+    """
+    Returns data for the Strategy Performance Matrix (Scatter Plot).
+    X: Total Equity (or ROI)
+    Y: Max Drawdown
+    Color: Win Rate? Or Generation?
+    """
+    results = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).all()
+
+    data = []
+    for br, strat in results:
+        # Avoid huge drawdowns breaking chart
+        dd = abs(br.max_drawdown)
+        if dd > 100: dd = 100
+
+        data.append({
+            "id": strat.id,
+            "name": strat.name,
+            "roi": round(br.roi, 2),
+            "drawdown": round(dd, 2),
+            "win_rate": round(br.win_rate, 2),
+            "generation": strat.generation
+        })
+    return data

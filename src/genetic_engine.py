@@ -232,6 +232,7 @@ class GeneticBreeder:
             await LabLogger.log("OPTIMIZER", "System busy (High CPU). Skipping optimization.")
             return
 
+        # Check Rate Limit EARLY
         if not RateLimiter.can_proceed():
             await LabLogger.log("OPTIMIZER", "Rate Limit Reached. Skipping optimization.")
             return

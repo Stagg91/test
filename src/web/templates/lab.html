@@ -122,6 +122,20 @@
     </div>
 </div>
 
+<!-- Strategy Matrix -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark text-white border-secondary">
+            <div class="card-header border-secondary">
+                <i class="fa-solid fa-braille"></i> Strategy Performance Matrix
+            </div>
+            <div class="card-body">
+                <div id="strategyMatrixChart" style="width:100%;height:400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Log / Console -->
 <div class="row mt-4">
     <div class="col-12">
@@ -264,6 +278,49 @@
         const today = new Date().toISOString().split('T')[0];
         const dateInput = document.getElementById('labEndDate');
         if(dateInput) dateInput.value = today;
+        updateStrategyMatrix();
     });
+
+    // Strategy Matrix
+    async function updateStrategyMatrix() {
+        try {
+            const res = await fetch('/api/strategy_matrix');
+            const data = await res.json();
+
+            if(!data || data.length === 0) return;
+
+            const trace = {
+                x: data.map(d => d.roi),
+                y: data.map(d => d.drawdown),
+                text: data.map(d => `<b>${d.name}</b><br>ROI: ${d.roi}%<br>DD: ${d.drawdown}%<br>Win Rate: ${d.win_rate}%`),
+                mode: 'markers',
+                marker: {
+                    size: 12,
+                    color: data.map(d => d.win_rate), // Color by Win Rate
+                    colorscale: 'Viridis',
+                    showscale: true,
+                    colorbar: {title: 'Win Rate %'},
+                    line: {color: 'white', width: 1}
+                },
+                type: 'scatter'
+            };
+
+            const layout = {
+                title: 'Risk vs Reward Landscape',
+                xaxis: {title: 'Total Return (ROI %)', gridcolor: '#444'},
+                yaxis: {title: 'Max Drawdown (%)', gridcolor: '#444', autorange: 'reversed'},
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: '#fff'},
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('strategyMatrixChart', [trace], layout);
+
+        } catch(e) {
+            console.error("Matrix Error:", e);
+        }
+    }
 </script>
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 {% endblock %}

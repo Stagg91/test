@@ -46,7 +46,8 @@
                     <div class="me-2">
                         <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
                     </div>
-                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
+                    <!-- Make button only trigger collapse if children exist or we want details -->
+                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0 {% if not children_map[s.id] %}no-arrow{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
                         <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
                         <span class="fw-bold me-auto">{{ s.name }}</span>
 
@@ -55,19 +56,12 @@
                         {% endif %}
 
                         {% if children_map[s.id] %}
-                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
+                        <span class="badge bg-info rounded-pill me-2">{{ children_map[s.id]|length }} Versions</span>
                         {% endif %}
                     </button>
                 </div>
             </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    {% if children_map[s.id] %}
-                    <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                    {% endif %}
-                </button>
-            </h2>
+            <!-- Force expand if active or no children? No, keep standard accordion behavior -->
             <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
                 <div class="accordion-body border-top border-secondary">
 
@@ -215,6 +209,13 @@
   </div>
 </div>
 
+<style>
+    /* Hide accordion arrow if no children/versions */
+    .accordion-button.no-arrow::after {
+        display: none;
+    }
+</style>
+
 <script>
 function openBacktestModal(id, name) {
     document.getElementById('modalStratId').value = id;
@@ -223,6 +224,54 @@ function openBacktestModal(id, name) {
     document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
 }
+
+// Intercept Modal Form Submit to handle Async
+document.getElementById('backtestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('button[type="submit"]');
+    const originalText = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = "Starting...";
+
+    const formData = new FormData(this);
+
+    try {
+        const res = await fetch(this.action, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.job_id) {
+            btn.innerText = "Queued!";
+            // Redirect to a progress page? Or just close and alert?
+            // User wanted "immediate feedback".
+            // Let's close modal and show a Toast with link to status?
+            // Or redirect to the result page which will poll?
+            // Actually, we don't have a standalone "Job Status Page".
+            // The Backtest page handles polling.
+            // Best approach: Redirect to /backtest?job_id=XYZ (we'd need to implement that param handling)
+            // Or just alert user.
+
+            // For now, let's redirect to the main Backtest Page where they can see recent jobs?
+            // Or maybe just show a Toast: "Backtest Started. Check System Console."
+
+            // Closing modal
+            bootstrap.Modal.getInstance(document.getElementById('backtestModal')).hide();
+            showToast(`Backtest Queued! Job ID: ${data.job_id.substring(0,8)}...`);
+            logConsole(`[BACKTEST] Job Queued: ${data.job_id}`);
+
+        } else if (data.error) {
+            alert("Error: " + data.error);
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Request Failed");
+    } finally {
+        btn.disabled = false;
+        btn.innerText = originalText;
+    }
+});
 </script>
 
 {% endblock %}
