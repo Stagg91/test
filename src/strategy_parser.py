@@ -138,14 +138,24 @@ class StrategyParser:
             entry_mask = df.eval(entry_logic)
             exit_mask = df.eval(exit_logic)
 
+            # Check Overlap
+            overlap = entry_mask & exit_mask
+            if overlap.any():
+                overlap_count = overlap.sum()
+                log_sync(f"Logic Warning: Entry and Exit logic overlap on {overlap_count} candles. Exit takes precedence.")
+
             # Apply signals
             df.loc[entry_mask, 'signal'] = 1
             df.loc[exit_mask, 'signal'] = -1
 
+            # Ensure integer type
+            df['signal'] = df['signal'].astype(int)
+
             # Log signal counts
             buy_count = entry_mask.sum()
             sell_count = exit_mask.sum()
-            log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
+            final_signal_counts = df['signal'].value_counts().to_dict()
+            log_sync(f"Logic Evaluated: {buy_count} potential Buys, {sell_count} potential Sells. Final Signals: {final_signal_counts}")
 
         except Exception as e:
             msg = f"Logic Evaluation Error: {e}"

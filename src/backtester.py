@@ -32,18 +32,23 @@ class Backtester:
                  self._log("Critical Error: 'signal' column missing after parsing.")
                  return {"error": "Signal generation failed", "roi_percent": 0, "max_drawdown": 0, "equity_curve": []}
 
+            # Debug: Log raw signals seen by Backtester
+            signal_counts = df['signal'].value_counts().to_dict()
+            self._log(f"Backtester Input Signals: {signal_counts}")
+
             # 2. Vectorized PnL Calculation
             df['position'] = np.nan
-            df.loc[df['signal'] == 1, 'position'] = 1
+            # Use >= 1 to catch any positive signal as Long entry
+            df.loc[df['signal'] >= 1, 'position'] = 1
             df.loc[df['signal'] == -1, 'position'] = 0
 
             # Fill forward: If 1, stays 1 until 0.
             df['position'] = df['position'].ffill().fillna(0)
 
-            # Check if any trades were taken
-            if df['position'].sum() == 0:
-                self._log("Warning: No positions were taken during backtest.")
-                # We still return the flat equity curve
+            # Check if any positions held
+            pos_sum = df['position'].sum()
+            if pos_sum == 0:
+                self._log("Warning: No positions held (Sum=0). Signals might be overridden or sparse.")
 
             # Calculate Returns
             df['pct_change'] = df['close'].pct_change()
@@ -66,6 +71,10 @@ class Backtester:
                 sharpe = 0.0
 
             trades_mask = df['position'].diff()
+            # Handle edge case: Entry on first candle
+            if df['position'].iloc[0] == 1:
+                trades_mask.iloc[0] = 1
+
             entries = (trades_mask == 1).sum()
 
             df['trade_id'] = (trades_mask == 1).cumsum()
