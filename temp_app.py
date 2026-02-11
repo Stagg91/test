@@ -307,8 +307,6 @@ async def save_settings(
     evolution_lookback_unit: str = Form("Months"),
     evolution_interval: int = Form(30),
     backtest_pairs: str = Form(""), # New
-    max_ai_requests_per_hour: int = Form(10), # New
-    auto_optimize: bool = Form(False), # New
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -327,143 +325,10 @@ async def save_settings(
     settings.evolution_lookback_value = evolution_lookback_value
     settings.evolution_lookback_unit = evolution_lookback_unit
     settings.evolution_interval = evolution_interval
-    settings.backtest_pairs = backtest_pairs
-    settings.max_ai_requests_per_hour = max_ai_requests_per_hour
-    settings.auto_optimize = auto_optimize
+    settings.backtest_pairs = backtest_pairs # Store selected pairs
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
-
-@app.get("/backtest", response_class=HTMLResponse)
-async def backtest_page(request: Request, db: Session = Depends(get_db)):
-    strategies = db.query(Strategy).all()
-    return templates.TemplateResponse("backtest.html", {"request": request, "config": None, "strategies": strategies})
-
-@app.post("/ai_backtest_config")
-async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Session = Depends(get_db)):
-    await LabLogger.log("API", f"Received ai_backtest_config with prompt: {prompt}")
-    settings = db.query(Settings).first()
-    key = settings.gemini_api_key if settings else None
-
-    agent = AISentimentAgent(gemini_api_key=key)
-    config = agent.interpret_strategy_prompt(prompt)
-    await LabLogger.log("API", f"Config generated: {config}")
-
-    return templates.TemplateResponse("backtest.html", {"request": request, "config": config})
-
-async def execute_backtest_job(job_id, symbol, interval, start_time, end_time, initial_balance, strategy_id):
-    JobManager.update_job(job_id, status="running", progress=0)
-    await LabLogger.log("BACKTEST", f"Job {job_id} started for {symbol}")
-
-    db = SessionLocal()
-    try:
-        de = DataEngine()
-
-        # Parse Dates
-        ts_start = None
-        ts_end = None
-        if start_time:
-            try:
-                ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
-            except: pass
-        if end_time:
-            try:
-                ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
-            except: pass
-
-        limit = 100000 if (start_time or end_time) else 1000
-
-        # Buffer Logic
-        if ts_start:
-            ms_per_candle = 3600000
-            if str(interval) == "1": ms_per_candle = 60000
-            elif str(interval) == "5": ms_per_candle = 300000
-            elif str(interval) == "15": ms_per_candle = 900000
-            elif str(interval) == "240": ms_per_candle = 14400000
-            elif str(interval).upper() == "D": ms_per_candle = 86400000
-            ts_start = ts_start - (200 * ms_per_candle)
-
-        JobManager.update_job(job_id, progress=10) # Fetching Data
-
-        df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start, end_time=ts_end)
-
-        if df.empty or len(df) < 50:
-            JobManager.update_job(job_id, status="failed", error="Insufficient data")
-            return
-
-        JobManager.update_job(job_id, progress=40) # Running Strategy
-
-        bt = Backtester(df, initial_balance=initial_balance)
-        strat = db.query(Strategy).filter(Strategy.id == strategy_id).first()
-
-        if not strat:
-             JobManager.update_job(job_id, status="failed", error="Strategy not found")
-             return
-
-        res = {}
-        if strat.content_json:
-             recipe = StrategyRecipe(**strat.content_json)
-             res = bt.run_vectorized_backtest(recipe)
-        else:
-             # Legacy
-             JobManager.update_job(job_id, status="failed", error="Legacy strategies not supported in async mode yet")
-             return
-
-        JobManager.update_job(job_id, progress=90) # Saving
-
-        # Helper to sanitize
-        def sanitize(obj):
-             if isinstance(obj, float):
-                 if np.isnan(obj) or np.isinf(obj):
-                     return 0.0
-             if isinstance(obj, dict):
-                 return {k: sanitize(v) for k, v in obj.items()}
-             if isinstance(obj, list):
-                 return [sanitize(v) for v in obj]
-             return obj
-
-        res = sanitize(res)
-
-        # Save to DB
-        br = BacktestResult(
-            strategy_id=strat.id,
-            symbol=symbol,
-            start_date=str(df.iloc[0]['startTime']),
-            end_date=str(df.iloc[-1]['startTime']),
-            roi=res.get('roi_percent', 0),
-            sharpe=res.get('sharpe', 0),
-            max_drawdown=res.get('max_drawdown', 0),
-            win_rate=res.get('win_rate', 0),
-            trades_count=res.get('total_trades', 0),
-            metrics_json=json.dumps(res),
-            timestamp=time.time()
-        )
-        db.add(br)
-        db.commit()
-
-        JobManager.update_job(job_id, status="completed", result={
-            "metrics": res,
-            "params": {"name": strat.name},
-            "result_id": br.id
-        })
-        await LabLogger.log("BACKTEST", f"Job {job_id} completed.")
-
-        # --- Continuous Optimization Hook ---
-        try:
-            settings = db.query(Settings).first()
-            if settings and settings.auto_optimize:
-                await LabLogger.log("OPTIMIZER", f"Auto-Optimize enabled. Checking strategy {strat.id}...")
-                breeder = GeneticBreeder(gemini_api_key=settings.gemini_api_key)
-                await breeder.optimize_strategy(br.id)
-        except Exception as e:
-            await LabLogger.log("ERROR", f"Auto-Optimize Trigger Failed: {e}")
-
-    except Exception as e:
-        traceback.print_exc()
-        JobManager.update_job(job_id, status="failed", error=str(e))
-    finally:
-        db.close()
-
 
 @app.post("/run_backtest")
 async def run_backtest(
@@ -532,8 +397,7 @@ async def get_job_status(job_id: str):
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
-    # Filter archived
-    all_strats = db.query(Strategy).filter(Strategy.archived == False).all()
+    all_strats = db.query(Strategy).all()
 
     # Sorting Logic: Prioritize strategies with > 0 trades, then by ROI
     results = db.query(BacktestResult.strategy_id, BacktestResult.trades_count, BacktestResult.roi).all()
