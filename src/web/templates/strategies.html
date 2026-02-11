@@ -191,7 +191,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <form id="backtestForm" action="/run_backtest" method="post" target="_blank"> <!-- Open in new tab? or redirect -->
+        <form id="backtestForm" action="/run_backtest" method="post">
              <input type="hidden" name="strategy_mode" value="ai">
              <input type="hidden" name="strategy_id" id="modalStratId">
 
@@ -261,13 +261,13 @@ function openBacktestModal(id, name) {
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
 }
 
-// Intercept Modal Form Submit to handle Async
+// Intercept Modal Form Submit to handle Async with Polling
 document.getElementById('backtestForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const btn = this.querySelector('button[type="submit"]');
     const originalText = btn.innerText;
     btn.disabled = true;
-    btn.innerText = "Starting...";
+    btn.innerText = "Processing...";
 
     const formData = new FormData(this);
 
@@ -276,34 +276,51 @@ document.getElementById('backtestForm').addEventListener('submit', async functio
             method: 'POST',
             body: formData
         });
+
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         const data = await res.json();
 
         if (data.job_id) {
-            btn.innerText = "Queued!";
-            // Redirect to a progress page? Or just close and alert?
-            // User wanted "immediate feedback".
-            // Let's close modal and show a Toast with link to status?
-            // Or redirect to the result page which will poll?
-            // Actually, we don't have a standalone "Job Status Page".
-            // The Backtest page handles polling.
-            // Best approach: Redirect to /backtest?job_id=XYZ (we'd need to implement that param handling)
-            // Or just alert user.
+            btn.innerText = "Running Simulation...";
+            showToast(`Backtest started... (ID: ${data.job_id.substring(0,6)})`);
 
-            // For now, let's redirect to the main Backtest Page where they can see recent jobs?
-            // Or maybe just show a Toast: "Backtest Started. Check System Console."
+            // Poll for completion
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`/api/backtest/status/${data.job_id}`);
+                    const statusData = await statusRes.json();
 
-            // Closing modal
-            bootstrap.Modal.getInstance(document.getElementById('backtestModal')).hide();
-            showToast(`Backtest Queued! Job ID: ${data.job_id.substring(0,8)}...`);
-            logConsole(`[BACKTEST] Job Queued: ${data.job_id}`);
+                    if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        btn.innerText = "Complete! Redirecting...";
+                        window.location.href = `/backtest/result/${statusData.result.result_id}`;
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollInterval);
+                        alert("Backtest Failed: " + statusData.error);
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    } else {
+                        // Still running
+                        btn.innerText = `Running... ${statusData.progress || 0}%`;
+                    }
+                } catch(err) {
+                    console.error("Polling error", err);
+                }
+            }, 1000); // Check every second
 
         } else if (data.error) {
             alert("Error: " + data.error);
+            btn.disabled = false;
+            btn.innerText = originalText;
+        } else {
+            // Manual sync result fallback
+            alert("Sync result received. Check results page.");
+            window.location.href = "/evolution";
         }
     } catch(e) {
         console.error(e);
-        alert("Request Failed");
-    } finally {
+        alert("Request Failed: " + e.message);
         btn.disabled = false;
         btn.innerText = originalText;
     }

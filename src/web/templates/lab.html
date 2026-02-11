@@ -281,6 +281,73 @@
         updateStrategyMatrix();
     });
 
+    // Handle Lab Backtest Form with Polling
+    const labForm = document.getElementById('labBacktestForm');
+    if(labForm) {
+        labForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = this.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+
+            const formData = new FormData(this);
+
+            try {
+                const res = await fetch(this.action, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+                const data = await res.json();
+
+                if (data.job_id) {
+                    logConsole(`[BACKTEST] Job Started: ${data.job_id}`);
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Running...';
+
+                    // Poll
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`/api/backtest/status/${data.job_id}`);
+                            const statusData = await statusRes.json();
+
+                            if (statusData.status === 'completed') {
+                                clearInterval(pollInterval);
+                                btn.innerHTML = '<i class="fa-solid fa-check"></i> Complete! Redirecting...';
+                                window.location.href = `/backtest/result/${statusData.result.result_id}`;
+                            } else if (statusData.status === 'failed') {
+                                clearInterval(pollInterval);
+                                alert("Backtest Failed: " + statusData.error);
+                                btn.disabled = false;
+                                btn.innerHTML = originalText;
+                            } else {
+                                // Update progress in console or button
+                                // btn.innerHTML = `Running... ${statusData.progress}%`;
+                            }
+                        } catch(err) {
+                            console.error("Polling error", err);
+                        }
+                    }, 1000);
+
+                } else if (data.error) {
+                    alert("Error: " + data.error);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                } else {
+                    // Sync fallback
+                    window.location.href = "/evolution";
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Request Failed: " + e.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    }
+
     // Strategy Matrix
     async function updateStrategyMatrix() {
         try {

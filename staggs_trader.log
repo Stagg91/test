@@ -58,3 +58,147 @@ INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [15630]
+--- LOGGING STARTED at Wed Feb 11 07:23:38 2026 ---
+Bot loop started...
+Evolution loop started...Data Downloader: Starting Sync...
+
+INFO:     Started server process [36451]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Error fetching instruments: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:23:39).
+Request → GET https://api-testnet.bybit.com/v5/market/instruments-info: category=linear&limit=1000.
+Data Downloader: Could not fetch symbols. Using default.
+Syncing BTCUSDT...
+Error fetching history for BTCUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:23:39).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770794619036&interval=60&limit=200&symbol=BTCUSDT.
+Syncing ETHUSDT...
+Error fetching history for ETHUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:23:39).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770794619050&interval=60&limit=200&symbol=ETHUSDT.
+Data Downloader: Sync Complete.
+[07:24:19] [API] INCOMING: GET /login
+INFO:     127.0.0.1:33512 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33512 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33514 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:33512 - "GET /static/sw.js HTTP/1.1" 200 OK
+[07:24:21] [API] INCOMING: POST /login
+[07:24:21] [AUTH] Login attempt for user: admin
+[07:24:21] [AUTH] Login failed for admin
+INFO:     127.0.0.1:33512 - "POST /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:33526 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[07:24:26] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:33542 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+INFO:     connection closed
+[07:25:14] [API] INCOMING: GET /login
+INFO:     127.0.0.1:55414 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55430 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:55414 - "GET /static/sw.js HTTP/1.1" 200 OK
+[07:25:15] [API] INCOMING: POST /login
+[07:25:15] [AUTH] Login attempt for user: admin
+[07:25:15] [AUTH] Login failed for admin
+INFO:     127.0.0.1:55414 - "POST /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:55432 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[07:25:20] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:49370 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:25:20] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:49370 - "GET /setup HTTP/1.1" 200 OK
+[07:25:25] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:49370 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:25:25] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:49370 - "GET /setup HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [36451]
+--- LOGGING STARTED at Wed Feb 11 07:29:09 2026 ---
+Bot loop started...Evolution loop started...
+
+Data Downloader: Starting Sync...
+INFO:     Started server process [39272]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Error fetching instruments: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:29:09).
+Request → GET https://api-testnet.bybit.com/v5/market/instruments-info: category=linear&limit=1000.
+Data Downloader: Could not fetch symbols. Using default.
+Syncing BTCUSDT...
+Error fetching history for BTCUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:29:09).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770794949316&interval=60&limit=200&symbol=BTCUSDT.
+Syncing ETHUSDT...
+Error fetching history for ETHUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:29:09).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770794949330&interval=60&limit=200&symbol=ETHUSDT.
+Data Downloader: Sync Complete.
+[07:30:39] [API] INCOMING: GET /login
+INFO:     127.0.0.1:44620 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44620 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44630 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:44620 - "GET /static/sw.js HTTP/1.1" 200 OK
+[07:30:39] [API] INCOMING: POST /login
+[07:30:39] [AUTH] Login attempt for user: admin
+[07:30:39] [AUTH] Login failed for admin
+INFO:     127.0.0.1:44620 - "POST /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:59548 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[07:30:44] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:59560 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:30:44] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:59560 - "GET /setup HTTP/1.1" 200 OK
+[07:30:49] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:59560 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:30:49] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:59560 - "GET /setup HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [39272]
+--- LOGGING STARTED at Wed Feb 11 07:32:15 2026 ---
+Bot loop started...Evolution loop started...
+
+Data Downloader: Starting Sync...
+INFO:     Started server process [40648]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Error fetching instruments: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:32:15).
+Request → GET https://api-testnet.bybit.com/v5/market/instruments-info: category=linear&limit=1000.
+Data Downloader: Could not fetch symbols. Using default.
+Syncing BTCUSDT...
+Error fetching history for BTCUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:32:15).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770795135524&interval=60&limit=200&symbol=BTCUSDT.
+Syncing ETHUSDT...
+Error fetching history for ETHUSDT: You have breached the ip rate limit or your ip is from the usa. (ErrCode: 403) (ErrTime: 07:32:15).
+Request → GET https://api-testnet.bybit.com/v5/market/kline: category=linear&end=1770795135538&interval=60&limit=200&symbol=ETHUSDT.
+Data Downloader: Sync Complete.
+[07:32:54] [API] INCOMING: GET /login
+INFO:     127.0.0.1:49604 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49604 - "GET /static/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49620 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:49604 - "GET /static/sw.js HTTP/1.1" 200 OK
+[07:32:54] [API] INCOMING: POST /login
+[07:32:54] [AUTH] Login attempt for user: admin
+[07:32:54] [AUTH] Login failed for admin
+INFO:     127.0.0.1:49604 - "POST /login HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:49634 - "WebSocket /ws/lab_log" [accepted]
+INFO:     connection open
+[07:32:59] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:60740 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:32:59] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:60740 - "GET /setup HTTP/1.1" 200 OK
+[07:33:04] [API] INCOMING: GET /api/resources
+INFO:     127.0.0.1:60740 - "GET /api/resources HTTP/1.1" 307 Temporary Redirect
+[07:33:04] [API] INCOMING: GET /setup
+INFO:     127.0.0.1:60740 - "GET /setup HTTP/1.1" 200 OK
+INFO:     connection closed
