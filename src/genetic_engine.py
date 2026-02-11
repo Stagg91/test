@@ -11,6 +11,21 @@ import json
 import traceback
 import concurrent.futures
 import asyncio
+import numpy as np
+
+# Helper to sanitize JSON
+def sanitize(obj):
+     if isinstance(obj, (np.integer, np.int64)):
+         return int(obj)
+     if isinstance(obj, (np.floating, np.float64, float)):
+         if np.isnan(obj) or np.isinf(obj):
+             return 0.0
+         return float(obj)
+     if isinstance(obj, dict):
+         return {k: sanitize(v) for k, v in obj.items()}
+     if isinstance(obj, list):
+         return [sanitize(v) for v in obj]
+     return obj
 
 # Standalone wrapper for pickling
 def evaluate_strategy_wrapper(strategy_json, df_dict, initial_balance=10000.0):
@@ -119,6 +134,9 @@ class GeneticBreeder:
 
              # Save Result
              if "error" not in res:
+                 # Sanitize before saving
+                 res = sanitize(res)
+
                  br = BacktestResult(
                     strategy_id=s.id,
                     symbol=symbol,
@@ -196,6 +214,9 @@ class GeneticBreeder:
             for i, res in enumerate(results):
                 strat = valid_strats[i]
                 if "error" in res: continue
+
+                # Sanitize before saving
+                res = sanitize(res)
 
                 br = BacktestResult(
                     strategy_id=strat.id,
@@ -333,15 +354,23 @@ class GeneticBreeder:
             await LabLogger.log("OPTIMIZER", f"Optimizing Strategy {strat.id} (ROI: {res.roi}%, DD: {res.max_drawdown}%)...")
 
             # 4. Construct Prompt
-            # "Strategy X had 5% ROI but 20% Drawdown. Modify the indicators or logic to reduce drawdown."
             weakness = "High Drawdown" if abs(res.max_drawdown) > 15 else "Low ROI"
+
+            # Use raw JSON content for explicit context
+            strategy_content = json.dumps(strat.content_json, indent=2)
+
             prompt = (
-                f"The strategy '{strat.name}' was backtested. "
-                f"Result: ROI={res.roi:.2f}%, Max Drawdown={res.max_drawdown:.2f}%, Trades={res.trades_count}. "
-                f"Weakness: {weakness}. "
-                "You are an architect. You can ADD an indicator (e.g. ADX, ATR), REMOVE a weak one, or CHANGE parameters. "
-                f"Your goal is to fix the weakness and improve the Risk/Reward ratio. "
-                "Return the improved strategy recipe."
+                f"We are optimizing the following trading strategy:\n"
+                f"{strategy_content}\n\n"
+                f"PERFORMANCE:\n"
+                f"- ROI: {res.roi:.2f}%\n"
+                f"- Max Drawdown: {res.max_drawdown:.2f}%\n"
+                f"- Trades: {res.trades_count}\n\n"
+                f"GOAL: Fix the weakness '{weakness}'. Improve Risk/Reward.\n"
+                f"INSTRUCTIONS:\n"
+                f"- You MUST Modify the 'indicators', 'entry_logic', or 'exit_logic'.\n"
+                f"- Keep the core idea but refine it.\n"
+                f"- Use the Available Indicators list to add filters if needed."
             )
 
             # 5. Call AI
