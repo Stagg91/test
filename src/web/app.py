@@ -542,30 +542,32 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
     # Filter archived
     all_strats = db.query(Strategy).filter(Strategy.archived == False).all()
 
-    # Sorting Logic: Prioritize strategies with > 0 trades, then by ROI
-    results = db.query(BacktestResult.strategy_id, BacktestResult.trades_count, BacktestResult.roi).all()
-    strat_stats = {}
-    for sid, trades, roi in results:
-        if sid not in strat_stats:
-            strat_stats[sid] = {'trades': 0, 'roi': -9999}
+    # Fetch all backtest results to find the "Best" one for each strategy
+    all_results = db.query(BacktestResult).all()
 
-        curr = strat_stats[sid]
-        if trades > 0:
-            if curr['trades'] == 0:
-                curr['trades'] = trades
-                curr['roi'] = roi
-            else:
-                if roi > curr['roi']:
-                     curr['roi'] = roi
-                     curr['trades'] = trades
+    # Map strategy_id -> Best BacktestResult object
+    best_results_map = {}
+
+    for res in all_results:
+        sid = res.strategy_id
+        if sid not in best_results_map:
+            best_results_map[sid] = res
         else:
-            # If currently 0 trades, we just stay 0.
-            pass
+            current_best = best_results_map[sid]
+            # Logic: Prefer trades > 0. Then prefer higher ROI.
+            if current_best.trades_count == 0 and res.trades_count > 0:
+                best_results_map[sid] = res
+            elif current_best.trades_count > 0 and res.trades_count > 0:
+                if res.roi > current_best.roi:
+                    best_results_map[sid] = res
+            elif current_best.trades_count == 0 and res.trades_count == 0:
+                # If both 0 trades, maybe taking newest? or highest ROI (even if 0)?
+                if res.roi > current_best.roi:
+                    best_results_map[sid] = res
 
-    def sort_key(s):
-        stats = strat_stats.get(s.id, {'trades': 0, 'roi': -9999})
-        # Tuple comparison: (Has Trades?, Generation, ROI)
-        return (stats['trades'] > 0, s.generation, stats['roi'])
+    # Attach best result to strategy objects (Python dynamic attribute)
+    for s in all_strats:
+        s.best_result = best_results_map.get(s.id)
 
     # Organize into trees
     strat_map = {s.id: s for s in all_strats}
@@ -580,12 +582,17 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
         else:
             roots.append(s)
 
-    # Sort roots
+    # Default Sort for initial render: Best ROI Descending
+    def sort_key(s):
+        if s.best_result:
+            return (s.best_result.trades_count > 0, s.best_result.roi)
+        return (False, -9999)
+
     roots.sort(key=sort_key, reverse=True)
 
-    # Sort children too?
+    # Sort children by Generation (newest first) usually makes sense
     for pid in children_map:
-        children_map[pid].sort(key=sort_key, reverse=True)
+        children_map[pid].sort(key=lambda x: x.generation, reverse=True)
 
     return templates.TemplateResponse("strategies.html", {
         "request": request,
