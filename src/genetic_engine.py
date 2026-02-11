@@ -68,7 +68,78 @@ class GeneticBreeder:
         for s in strategies:
             self.db.add(s)
         self.db.commit()
+
+        # Trigger Immediate Backtest for New Strategies
+        await LabLogger.log("EVO", "Triggering initial backtests for Gen 0...")
+        for s in strategies:
+             await self._trigger_backtest(s.id)
+
         return strategies
+
+    async def _trigger_backtest(self, strategy_id: int):
+        """
+        Helper to queue a backtest job for a strategy.
+        Ideally uses JobManager, but we need to ensure the worker picks it up.
+        For now, we simulate the job queueing.
+        """
+        try:
+             # We can't import execute_backtest_job directly to run it here without circular deps?
+             # Actually, we can if we import it inside the function, BUT execute_backtest_job is in app.py
+             # which imports GeneticBreeder. Circular.
+
+             # Solution: Create a Job entry and let the frontend polling or a background worker pick it up?
+             # The current architecture relies on FastAPI BackgroundTasks.
+             # If we are in a background loop (evolution_loop), we don't have a Request context.
+
+             # Alternative: Run it purely via the Backtester class here and save result.
+             # This blocks the evolution loop but ensures data is ready.
+             # Given we have ProcessPoolExecutor, we can offload it!
+
+             # Re-use evaluate_population logic?
+             # Or just run it linearly for now since Gen0 is small (3-5 strats).
+
+             s = self.db.query(Strategy).filter(Strategy.id == strategy_id).first()
+             if not s: return
+
+             # Quick default backtest on BTCUSDT 1h
+             symbol = "BTCUSDT"
+             interval = "60"
+
+             # Fetch data
+             de = DataEngine()
+             df = de.fetch_ohlcv(symbol, interval=interval, limit=1000)
+
+             if df.empty: return
+
+             # Run Backtest
+             await LabLogger.log("EVO", f"Auto-Backtesting {s.name}...")
+             bt = Backtester(df, initial_balance=10000)
+             recipe = StrategyRecipe(**s.content_json)
+             res = bt.run_vectorized_backtest(recipe)
+
+             # Save Result
+             if "error" not in res:
+                 br = BacktestResult(
+                    strategy_id=s.id,
+                    symbol=symbol,
+                    start_date=str(df.iloc[0]['startTime']),
+                    end_date=str(df.iloc[-1]['startTime']),
+                    roi=res.get('roi_percent', 0),
+                    sharpe=res.get('sharpe', 0),
+                    max_drawdown=res.get('max_drawdown', 0),
+                    win_rate=res.get('win_rate', 0),
+                    trades_count=res.get('total_trades', 0),
+                    metrics_json=json.dumps(res),
+                    timestamp=time.time()
+                 )
+                 self.db.add(br)
+                 self.db.commit()
+                 await LabLogger.log("EVO", f"Backtest complete for {s.name}. ROI: {res.get('roi_percent'):.2f}%")
+             else:
+                 await LabLogger.log("EVO", f"Backtest failed for {s.name}: {res.get('error')}")
+
+        except Exception as e:
+            await LabLogger.log("ERROR", f"Auto-Backtest Error: {e}")
 
     async def evaluate_population(self, generation=0, symbol="BTCUSDT", start_time=None):
         """
@@ -220,6 +291,12 @@ class GeneticBreeder:
         self.db.commit()
         await LabLogger.log("EVO", f"Generation {next_gen} created.")
 
+        # Trigger Backtests for Children
+        for child in self.db.query(Strategy).filter(Strategy.generation == next_gen).all():
+             # Only trigger if no result yet
+             if not child.best_result:
+                 await self._trigger_backtest(child.id)
+
     async def optimize_strategy(self, result_id: int):
         """
         Continuous Optimizer Logic.
@@ -303,17 +380,9 @@ class GeneticBreeder:
                 # We can't easily call the async route handler from here.
                 # We can replicate the job creation logic.
 
-                # Create Job
-                job_id = JobManager.create_job("backtest")
-
-                # We can't spawn the task here easily without the FastAPI background tasks object or event loop access.
-                # But we are already in an async function. We can just call the logic?
-                # No, we want it to run in background.
-                # For MVP, let's just log it. "Ready for backtest".
-                # Or, if we passed a callback?
-                # Ideally, we put this in a queue.
-
-                await LabLogger.log("OPTIMIZER", f"New strategy {child_strat.id} ready for testing.")
+                # Trigger Immediate Backtest for the Optimized Child
+                await self._trigger_backtest(child_strat.id)
+                await LabLogger.log("OPTIMIZER", f"Backtest executed for {child_strat.name}.")
 
         except Exception as e:
             await LabLogger.log("ERROR", f"Optimizer failed: {e}")
