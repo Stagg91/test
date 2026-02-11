@@ -420,9 +420,12 @@ async def execute_backtest_job(job_id, symbol, interval, start_time, end_time, i
 
         # Helper to sanitize
         def sanitize(obj):
-             if isinstance(obj, float):
+             if isinstance(obj, (np.integer, np.int64)):
+                 return int(obj)
+             if isinstance(obj, (np.floating, np.float64, float)):
                  if np.isnan(obj) or np.isinf(obj):
                      return 0.0
+                 return float(obj)
              if isinstance(obj, dict):
                  return {k: sanitize(v) for k, v in obj.items()}
              if isinstance(obj, list):
