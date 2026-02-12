@@ -9,6 +9,7 @@
         </button>
     </div>
 
+    <!-- Generator Panel -->
     <div class="collapse mb-4" id="generatePanel">
         <div class="card bg-dark border-gold">
             <div class="card-header border-secondary text-gold">Generate New Strategies (AI)</div>
@@ -28,131 +29,178 @@
         </div>
     </div>
 
-    <h3>Strategy Library</h3>
-    <p class="text-muted small">Strategies are grouped by lineage. Click to expand.</p>
-
+    <!-- Controls -->
     <form action="/strategies/delete" method="post" id="deleteForm">
-    <div class="mb-3 text-end">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <p class="text-muted small mb-0">Page {{ page }} of {{ total_pages }}</p>
         <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies?')">
             <i class="fa-solid fa-trash"></i> Delete Selected
         </button>
     </div>
 
-    <div class="accordion" id="strategyAccordion">
+    <!-- Strategy Grid -->
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
         {% for s in strategies %}
-        <div class="accordion-item bg-dark border-secondary mb-2">
-            <h2 class="accordion-header" id="heading{{ s.id }}">
-                <div class="d-flex align-items-center w-100 bg-dark text-white p-2">
-                    <div class="me-2">
+        <div class="col">
+            <div class="card h-100 bg-dark border-secondary">
+                <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                    <div class="form-check">
                         <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
+                        <label class="form-check-label fw-bold text-white text-truncate" style="max-width: 150px;" title="{{ s.name }}">
+                            {{ s.name }}
+                        </label>
                     </div>
-                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
-                        <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
-                        <span class="fw-bold me-auto">{{ s.name }}</span>
-
-                        {% if s.is_active %}
-                        <span class="badge bg-success me-2">ACTIVE</span>
-                        {% endif %}
-
-                        {% if children_map[s.id] %}
-                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                        {% endif %}
-                    </button>
+                    <span class="badge bg-secondary">Gen {{ s.generation }}</span>
                 </div>
-            </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
+                <div class="card-body">
+                    <!-- Status Badge -->
+                    <div class="mb-2">
+                        {% if s.is_active %}
+                            <span class="badge bg-success w-100">ACTIVE TRADING</span>
+                        {% else %}
+                            <span class="badge bg-dark border border-secondary text-muted w-100">Inactive</span>
+                        {% endif %}
+                    </div>
 
-                    {% if children_map[s.id] %}
-                    <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                    {% endif %}
-                </button>
-            </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    <!-- Parent Details -->
-                    <div class="row mb-3">
-                        <div class="col-md-8">
-                            <p class="small text-muted mb-1">Strategy ID: {{ s.id }} | Type: {{ s.type }}</p>
-                            <!-- Logic Preview -->
-                            <div class="bg-black p-2 rounded border border-secondary font-monospace small text-success mb-2">
-                                {% if s.content_json %}
-                                    <strong>Entries:</strong> {{ s.content_json.entry_logic }}<br>
-                                    <strong>Exits:</strong> {{ s.content_json.exit_logic }}
-                                {% else %}
-                                    Legacy Code Strategy
-                                {% endif %}
+                    <!-- Stats Grid -->
+                    {% if stats_map[s.id] %}
+                    <div class="text-center mb-1">
+                        <span class="badge bg-secondary mb-2">{{ stats_map[s.id].count }} Pairs Tested</span>
+                    </div>
+                    <div class="row text-center mb-3 g-1">
+                        <div class="col-4">
+                            <div class="p-1 border border-secondary rounded">
+                                <small class="d-block text-muted" style="font-size: 0.7em;">Avg ROI</small>
+                                <span class="{{ 'text-success' if stats_map[s.id].roi > 0 else 'text-danger' }} fw-bold">
+                                    {{ "%.1f"|format(stats_map[s.id].roi) }}%
+                                </span>
                             </div>
                         </div>
-                        <div class="col-md-4 text-end">
-                             <div class="btn-group-vertical w-100">
-                                {% if not s.is_active %}
-                                <form action="/strategies/activate/{{ s.id }}" method="post">
-                                    <button class="btn btn-sm btn-outline-success w-100 mb-1">Activate</button>
-                                </form>
-                                {% else %}
-                                <form action="/strategies/deactivate/{{ s.id }}" method="post">
-                                    <button class="btn btn-sm btn-outline-danger w-100 mb-1">Deactivate</button>
-                                </form>
-                                {% endif %}
-                                <button class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
-                             </div>
+                        <div class="col-4">
+                            <div class="p-1 border border-secondary rounded">
+                                <small class="d-block text-muted" style="font-size: 0.7em;">Avg WR</small>
+                                <span>{{ "%.0f"|format(stats_map[s.id].win_rate) }}%</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-1 border border-secondary rounded">
+                                <small class="d-block text-muted" style="font-size: 0.7em;">Avg DD</small>
+                                <span class="text-danger">{{ "%.1f"|format(stats_map[s.id].drawdown) }}%</span>
+                            </div>
                         </div>
                     </div>
-
-                    <!-- Children List -->
-                    {% if children_map[s.id] %}
-                        <h6 class="text-info mt-3 border-bottom border-secondary pb-2">Evolution History / Versions</h6>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-dark table-hover align-middle">
-                                <thead>
-                                    <tr>
-                                        <th>Gen</th>
-                                        <th>Name</th>
-                                        <th>Created</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for child in children_map[s.id]|sort(attribute='generation', reverse=True) %}
-                                    <tr>
-                                        <td><span class="badge bg-secondary">{{ child.generation }}</span></td>
-                                        <td>
-                                            {{ child.name }}
-                                            {% if child.is_active %}<span class="badge bg-success ms-1">ACTIVE</span>{% endif %}
-                                        </td>
-                                        <td><small class="text-muted">{{ "%.1f"|format(time_since(child.created_at)) }}h ago</small></td> <!-- Need helper? -->
-                                        <td>
-                                            <div class="btn-group btn-group-sm">
-                                                {% if not child.is_active %}
-                                                <form action="/strategies/activate/{{ child.id }}" method="post">
-                                                    <button class="btn btn-outline-success" title="Activate"><i class="fa-solid fa-power-off"></i></button>
-                                                </form>
-                                                {% else %}
-                                                <form action="/strategies/deactivate/{{ child.id }}" method="post">
-                                                    <button class="btn btn-outline-danger" title="Deactivate"><i class="fa-solid fa-stop"></i></button>
-                                                </form>
-                                                {% endif %}
-                                                <button class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+                    {% else %}
+                    <div class="text-center text-muted mb-3 py-2 border border-secondary rounded border-dashed">
+                        <small>No Backtest Data</small>
+                    </div>
                     {% endif %}
 
+                    <!-- Logic Snippet -->
+                    <div class="bg-black p-2 rounded border border-secondary font-monospace small text-muted mb-2 overflow-hidden" style="height: 60px;">
+                        {% if s.content_json %}
+                            <span class="text-success">B:</span> {{ s.content_json.entry_logic }}<br>
+                            <span class="text-danger">S:</span> {{ s.content_json.exit_logic }}
+                        {% else %}
+                            Legacy Code Strategy
+                        {% endif %}
+                    </div>
+
+                    <!-- Versions -->
+                    {% if children_map[s.id] %}
+                    <button type="button" class="btn btn-sm btn-outline-info w-100 mb-2" onclick="openVersionsModal('{{ s.id }}')">
+                        <i class="fa-solid fa-code-branch"></i> {{ children_map[s.id]|length }} Versions
+                    </button>
+                    <!-- Hidden Versions Data for Modal -->
+                    <div id="versions-{{ s.id }}" class="d-none">
+                        <table class="table table-sm table-dark table-hover">
+                            <thead><tr><th>Gen</th><th>Name</th><th>ROI</th><th>Action</th></tr></thead>
+                            <tbody>
+                                {% for child in children_map[s.id] %}
+                                <tr>
+                                    <td>{{ child.generation }}</td>
+                                    <td>{{ child.name }}</td>
+                                    <td>Unknown</td> <!-- Would need fetch -->
+                                    <td>
+                                        <button class="btn btn-xs btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')"><i class="fa-solid fa-play"></i></button>
+                                        <form action="/strategies/activate/{{ child.id }}" method="post" class="d-inline">
+                                            <button class="btn btn-xs btn-outline-success"><i class="fa-solid fa-bolt"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
+                    <!-- Results List -->
+                    {% if results_map and results_map[s.id] %}
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="openResultsModal('{{ s.id }}')">
+                        <i class="fa-solid fa-list-check"></i> {{ results_map[s.id]|length }} Results
+                    </button>
+                    <!-- Hidden Results Data -->
+                    <div id="results-{{ s.id }}" class="d-none">
+                        <table class="table table-sm table-dark table-hover">
+                            <thead><tr><th>Symbol</th><th>Interval</th><th>ROI</th><th>DD</th><th>View</th></tr></thead>
+                            <tbody>
+                                {% for r in results_map[s.id] %}
+                                <tr>
+                                    <td>{{ r.symbol }}</td>
+                                    <td>{{ r.interval }}</td>
+                                    <td class="{{ 'text-success' if r.roi > 0 else 'text-danger' }}">{{ "%.2f"|format(r.roi) }}%</td>
+                                    <td class="text-danger">{{ "%.2f"|format(r.max_drawdown) }}%</td>
+                                    <td>
+                                        <a href="/backtest/result/{{ r.id }}" class="btn btn-xs btn-outline-info" target="_blank"><i class="fa-solid fa-chart-line"></i></a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
+                </div>
+                <div class="card-footer bg-transparent border-secondary">
+                    <div class="btn-group w-100">
+                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">
+                            <i class="fa-solid fa-play"></i> Test
+                        </button>
+                        {% if not s.is_active %}
+                        <button type="submit" formmethod="post" formaction="/strategies/activate/{{ s.id }}" class="btn btn-outline-success btn-sm">
+                            <i class="fa-solid fa-bolt"></i> On
+                        </button>
+                        {% else %}
+                        <button type="submit" formmethod="post" formaction="/strategies/deactivate/{{ s.id }}" class="btn btn-outline-danger btn-sm">
+                            <i class="fa-solid fa-stop"></i> Off
+                        </button>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
         {% endfor %}
     </div>
     </form>
+
+    <!-- Pagination -->
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            <li class="page-item {{ 'disabled' if page <= 1 }}">
+                <a class="page-link bg-dark text-white border-secondary" href="/strategies?page={{ page - 1 }}">Previous</a>
+            </li>
+            {% for p in range(1, total_pages + 1) %}
+            <li class="page-item {{ 'active' if p == page }}">
+                <a class="page-link {{ 'bg-gold border-gold text-dark' if p == page else 'bg-dark text-white border-secondary' }}" href="/strategies?page={{ p }}">{{ p }}</a>
+            </li>
+            {% endfor %}
+            <li class="page-item {{ 'disabled' if page >= total_pages }}">
+                <a class="page-link bg-dark text-white border-secondary" href="/strategies?page={{ page + 1 }}">Next</a>
+            </li>
+        </ul>
+    </nav>
 </div>
 
-<!-- Backtest Modal (Placeholder for Step 4) -->
+<!-- Backtest Modal -->
 <div class="modal fade" id="backtestModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content bg-dark text-white border-gold">
@@ -161,7 +209,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <form id="backtestForm" action="/run_backtest" method="post" target="_blank"> <!-- Open in new tab? or redirect -->
+        <form id="backtestForm" action="/run_backtest" method="post" target="_blank">
              <input type="hidden" name="strategy_mode" value="ai">
              <input type="hidden" name="strategy_id" id="modalStratId">
 
@@ -177,6 +225,8 @@
                          <option value="BTCUSDT">BTCUSDT</option>
                          <option value="ETHUSDT">ETHUSDT</option>
                          <option value="SOLUSDT">SOLUSDT</option>
+                         <option value="XRPUSDT">XRPUSDT</option>
+                         <option value="ADAUSDT">ADAUSDT</option>
                      </select>
                  </div>
                  <div class="col-6 mb-3">
@@ -185,6 +235,7 @@
                          <option value="60">1 Hour</option>
                          <option value="240">4 Hours</option>
                          <option value="D">1 Day</option>
+                         <option value="15">15 Min</option>
                      </select>
                  </div>
              </div>
@@ -194,7 +245,6 @@
                  <input type="number" name="initial_balance" value="1000" class="form-control bg-black text-white border-secondary">
              </div>
 
-             <!-- Date Range Inputs (Step 4) -->
              <div class="row">
                  <div class="col-6 mb-3">
                      <label>Start Date</label>
@@ -215,14 +265,54 @@
   </div>
 </div>
 
+<!-- Versions Modal -->
+<div class="modal fade" id="versionsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-white border-info">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Strategy Evolution History</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="versionsModalBody">
+                <!-- Content injected via JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Modal -->
+<div class="modal fade" id="resultsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-white border-primary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Backtest Results (Multi-Pair)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultsModalBody">
+                <!-- Content injected via JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function openBacktestModal(id, name) {
     document.getElementById('modalStratId').value = id;
     document.getElementById('modalStratName').value = name;
-    // Set Today
     document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
 }
-</script>
 
+function openVersionsModal(id) {
+    var content = document.getElementById('versions-' + id).innerHTML;
+    document.getElementById('versionsModalBody').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('versionsModal')).show();
+}
+
+function openResultsModal(id) {
+    var content = document.getElementById('results-' + id).innerHTML;
+    document.getElementById('resultsModalBody').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('resultsModal')).show();
+}
+</script>
 {% endblock %}
