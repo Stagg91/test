@@ -9,6 +9,18 @@
         </button>
     </div>
 
+    <!-- Strategy Matrix Chart -->
+    {% if matrix_data %}
+    <div class="card bg-dark border-secondary mb-4">
+        <div class="card-header border-secondary text-white">
+            <i class="fa-solid fa-chart-scatter"></i> Strategy Performance Matrix (Risk vs Reward)
+        </div>
+        <div class="card-body p-0">
+             <div id="strategyMatrix" style="height: 300px; width: 100%;"></div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Generator Panel -->
     <div class="collapse mb-4" id="generatePanel">
         <div class="card bg-dark border-gold">
@@ -29,18 +41,25 @@
         </div>
     </div>
 
-    <h3>Strategy Library</h3>
-    <p class="text-muted small">Strategies are displayed as cards. Click 'Details' to see logic and variations.</p>
+    <!-- Controls: Sort & Delete -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center">
+            <span class="text-muted me-2 small">Sort By:</span>
+            <div class="btn-group btn-group-sm">
+                <a href="/strategies?sort_by=roi" class="btn btn-outline-secondary {% if sort_by == 'roi' %}active{% endif %}">ROI</a>
+                <a href="/strategies?sort_by=drawdown" class="btn btn-outline-secondary {% if sort_by == 'drawdown' %}active{% endif %}">Drawdown</a>
+                <a href="/strategies?sort_by=trades" class="btn btn-outline-secondary {% if sort_by == 'trades' %}active{% endif %}">Trades</a>
+                <a href="/strategies?sort_by=gen" class="btn btn-outline-secondary {% if sort_by == 'gen' %}active{% endif %}">Gen</a>
+            </div>
+        </div>
 
-    <!-- Delete Action -->
-    <div class="mb-3 text-end">
         <button type="button" class="btn btn-danger btn-sm" onclick="deleteSelected()">
             <i class="fa-solid fa-trash"></i> Delete Selected
         </button>
     </div>
 
     <!-- Strategy Grid -->
-    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
         {% for s in strategies %}
         <div class="col">
             <div class="card h-100 bg-dark border-secondary shadow-sm">
@@ -63,6 +82,38 @@
                         Type: {{ s.type }}
                     </p>
 
+                    <!-- Latest Stats -->
+                    {% if s.latest_result %}
+                        <div class="row g-1 mb-2 text-center small">
+                            <div class="col-4">
+                                <div class="bg-black border border-secondary rounded p-1">
+                                    <div class="text-muted" style="font-size: 0.7rem;">ROI</div>
+                                    <div class="fw-bold {% if s.latest_result.roi > 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {{ "%.1f"|format(s.latest_result.roi) }}%
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="bg-black border border-secondary rounded p-1">
+                                    <div class="text-muted" style="font-size: 0.7rem;">DD</div>
+                                    <div class="fw-bold text-danger">
+                                        {{ "%.1f"|format(s.latest_result.max_drawdown) }}%
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="bg-black border border-secondary rounded p-1">
+                                    <div class="text-muted" style="font-size: 0.7rem;">Wins</div>
+                                    <div class="fw-bold text-info">
+                                        {{ "%.0f"|format(s.latest_result.win_rate) }}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-secondary p-1 mb-2 small text-center">No Backtest Data</div>
+                    {% endif %}
+
                     {% if children_map[s.id] %}
                         <div class="alert alert-dark border-secondary p-1 mb-2 d-flex align-items-center">
                             <i class="fa-solid fa-code-branch text-info me-2"></i>
@@ -84,7 +135,7 @@
                     <div class="collapse" id="details{{ s.id }}">
                         <div class="card card-body bg-black border-secondary p-2 small">
                             {% if s.content_json %}
-                                <div class="mb-2">
+                                <div class="mb-2" style="max-height: 100px; overflow-y: auto;">
                                     <strong class="text-success">Entry:</strong> {{ s.content_json.entry_logic }}<br>
                                     <strong class="text-danger">Exit:</strong> {{ s.content_json.exit_logic }}
                                 </div>
@@ -121,16 +172,6 @@
 
                                          <!-- Child Actions -->
                                          <div class="btn-group btn-group-sm">
-                                             {% if not child.is_active %}
-                                             <form action="/strategies/activate/{{ child.id }}" method="post" class="d-inline">
-                                                 <button class="btn btn-link btn-sm p-0 text-success me-1" title="Activate"><i class="fa-solid fa-power-off"></i></button>
-                                             </form>
-                                             {% else %}
-                                             <form action="/strategies/deactivate/{{ child.id }}" method="post" class="d-inline">
-                                                 <button class="btn btn-link btn-sm p-0 text-danger me-1" title="Deactivate"><i class="fa-solid fa-stop"></i></button>
-                                             </form>
-                                             {% endif %}
-
                                              <button type="button" class="btn btn-link btn-sm p-0 text-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest">
                                                 <i class="fa-solid fa-play"></i>
                                              </button>
@@ -215,7 +256,42 @@
 <!-- Hidden Delete Form -->
 <form id="hiddenDeleteForm" action="/strategies/delete" method="post" style="display:none;"></form>
 
+<!-- Plotly.js -->
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+
 <script>
+// Load Matrix Data
+const matrixData = JSON.parse('{{ matrix_data|safe }}');
+
+if (matrixData && matrixData.length > 0) {
+    const trace = {
+        x: matrixData.map(d => d.x), // Max Drawdown
+        y: matrixData.map(d => d.y), // ROI
+        text: matrixData.map(d => d.text),
+        mode: 'markers',
+        marker: {
+            size: matrixData.map(d => Math.min(Math.max(d.size/5, 5), 20)), // Scale trade count to size
+            color: matrixData.map(d => d.color), // Generation
+            colorscale: 'Viridis',
+            showscale: true,
+            colorbar: {title: 'Generation'}
+        },
+        type: 'scatter'
+    };
+
+    const layout = {
+        title: 'Strategy Performance Matrix',
+        xaxis: {title: 'Max Drawdown (%)', gridcolor: '#444'},
+        yaxis: {title: 'ROI (%)', gridcolor: '#444'},
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: {color: '#fff'},
+        hovermode: 'closest'
+    };
+
+    Plotly.newPlot('strategyMatrix', [trace], layout);
+}
+
 function openBacktestModal(id, name) {
     document.getElementById('modalStratId').value = id;
     document.getElementById('modalStratName').value = name;

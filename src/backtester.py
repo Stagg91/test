@@ -75,6 +75,9 @@ class Backtester:
                 wins = (trade_returns_exact > 0).sum()
                 total_trades = entries
                 win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+            else:
+                total_trades = 0
+                win_rate = 0
 
             # Extract detailed trade log
             trades_log = []
