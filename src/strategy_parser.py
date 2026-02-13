@@ -22,7 +22,15 @@ class StrategyParser:
         # ADX_(\d+)
         for match in re.finditer(r'ADX_(\d+)', logic_string, re.IGNORECASE):
             length = int(match.group(1))
-            configs.append({'name': 'adx', 'params': {'length': length}, 'col_name': f'ADX_{length}'})
+            # col_name=None because ADX returns a DF with correct column names already
+            configs.append({'name': 'adx', 'params': {'length': length}, 'col_name': None})
+
+        # MACD_(\d+)_(\d+)_(\d+) (Handle MACD, MACDs, MACDh variants)
+        for match in re.finditer(r'(?:MACD|MACDs|MACDh)_(\d+)_(\d+)_(\d+)', logic_string, re.IGNORECASE):
+            fast = int(match.group(1))
+            slow = int(match.group(2))
+            signal = int(match.group(3))
+            configs.append({'name': 'macd', 'params': {'fast': fast, 'slow': slow, 'signal': signal}, 'col_name': None})
 
         # EMA_(\d+)
         for match in re.finditer(r'EMA_(\d+)', logic_string, re.IGNORECASE):
