@@ -75,13 +75,11 @@ class StrategyParser:
                             if to_concat:
                                 df = pd.concat([df] + to_concat, axis=1)
                         elif isinstance(result, pd.Series):
-                            # If series has name, use it, else generic
-                            if result.name:
-                                df[result.name] = result
-                            else:
-                                # Fallback? Usually TALib returns named series or we rely on assignment
-                                # TALib methods return Series without name set usually.
-                                pass
+                            # Force generated name to ensure consistency (e.g. RSI_14)
+                            # and prevent accidental overwrite of 'close' if series name is inherited.
+                            param_str = "_".join([str(v) for v in params.values()])
+                            default_name = f"{ind.name.upper()}_{param_str}" if param_str else ind.name.upper()
+                            df[default_name] = result
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -119,6 +117,9 @@ class StrategyParser:
         df['signal'] = 0
 
         try:
+            # Debug: Print available columns
+            # print(f"DEBUG: Available Columns: {df.columns.tolist()}")
+
             entry_mask = df.eval(entry_logic)
             exit_mask = df.eval(exit_logic)
 
