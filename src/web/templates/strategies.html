@@ -34,7 +34,7 @@
         <div class="col-12">
             <div class="card bg-dark border-secondary">
                 <div class="card-header border-secondary">
-                    <i class="fa-solid fa-chart-scatter"></i> Strategy Performance Matrix (Top 50)
+                    <i class="fa-solid fa-chart-scatter"></i> Strategy Performance Matrix (All Backtested)
                 </div>
                 <div class="card-body p-0">
                     <div id="performanceMatrix" style="width:100%;height:500px;"></div>
@@ -56,9 +56,10 @@
                     <th>Rank</th>
                     <th>Strategy Name</th>
                     <th>Gen</th>
-                    <th>ROI</th>
-                    <th>Win Rate</th>
-                    <th>Drawdown</th>
+                    <th>Avg ROI</th>
+                    <th>Avg Win Rate</th>
+                    <th>Avg Drawdown</th>
+                    <th>Last Result</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -72,8 +73,17 @@
                     <td>{{ "%.1f"|format(item.win_rate) }}%</td>
                     <td class="text-danger">{{ "%.2f"|format(item.max_drawdown) }}%</td>
                     <td>
+                        {% if item.last_result_id %}
+                            <a href="/backtest/result/{{ item.last_result_id }}" class="badge bg-info text-decoration-none">
+                                <i class="fa-solid fa-chart-line"></i> View
+                            </a>
+                        {% else %}
+                            <span class="text-muted small">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         <button class="btn btn-sm btn-outline-info" onclick="openStrategyModal('{{ item.strategy.id }}')">
-                            <i class="fa-solid fa-eye"></i> View
+                            <i class="fa-solid fa-eye"></i> Details
                         </button>
                     </td>
                 </tr>
@@ -184,18 +194,18 @@
     var matrixData = {{ matrix_data|tojson }};
 
     var trace1 = {
-      x: matrixData.map(d => d.x), // Max Drawdown (Keep as negative for visual intuition? Usually DD is negative. Let's assume input is negative e.g. -15)
+      x: matrixData.map(d => d.x), // Max Drawdown
       y: matrixData.map(d => d.y), // ROI
       mode: 'markers',
       type: 'scatter',
       text: matrixData.map(d => d.text),
       customdata: matrixData.map(d => d.id),
       marker: {
-        size: 12,
+        size: 10,
         color: matrixData.map(d => d.y), // Color by ROI
         colorscale: 'Viridis',
         showscale: true,
-        line: { color: 'white', width: 1 }
+        line: { color: 'white', width: 0.5 }
       },
       hovertemplate: '<b>%{text}</b><br>ROI: %{y:.2f}%<br>DD: %{x:.2f}%<extra></extra>'
     };
@@ -207,7 +217,8 @@
       font: { color: '#fff' },
       xaxis: { title: 'Max Drawdown (%)', gridcolor: '#444' },
       yaxis: { title: 'Total ROI (%)', gridcolor: '#444' },
-      hovermode: 'closest'
+      hovermode: 'closest',
+      margin: {t: 20, l: 60, r: 20, b: 60}
     };
 
     Plotly.newPlot('performanceMatrix', [trace1], layout);
@@ -221,31 +232,11 @@
     });
 
     // --- 3. Modal Logic ---
-    // Store current strat ID for backtest transfer
     let currentStratId = null;
     let currentStratName = "";
 
     function openStrategyModal(id) {
         currentStratId = id;
-        // Fetch Details (AJAX or preloaded? Let's use AJAX for scalability)
-        // For now, we don't have a dedicated API for single strat detail JSON.
-        // We can create a simple endpoint or just reload page.
-        // Let's implement a simple fetch from existing endpoint logic if possible,
-        // OR just fill basic info if we had it in DOM.
-
-        // Since we don't have a dedicated API, let's redirect to backtest result page?
-        // No, user wants popup.
-        // Let's use the 'strategies' list passed to template to find data in JS if possible?
-        // We only passed 'leaderboard' (top 20). The clicked dot might be outside top 20.
-        // We need a /api/strategy/{id} endpoint.
-        // For this plan, let's assume we add a quick fetch script or just use what we have.
-
-        // Quick Fix: Redirect to backtest result of that strategy if available?
-        // Better: Fetch from /strategies/backtest/{id} triggers a run.
-
-        // Let's just fetch basic info from a new endpoint we will add to app.py?
-        // Or simpler: Just populate with placeholder and buttons for now,
-        // as the user asked for "viewing the card details".
 
         fetch(`/api/strategy/${id}`)
             .then(r => r.json())

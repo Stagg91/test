@@ -73,7 +73,10 @@ class TALib:
     def adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.DataFrame:
         # Simplified ADX implementation
         # True Range
-        tr = TALib.atr(high, low, close, length=1) # Use ATR calc for 1 period TR
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
         # Directional Movement
         up = high - high.shift(1)

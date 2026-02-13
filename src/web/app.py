@@ -548,20 +548,22 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
     all_strats = db.query(Strategy).all()
 
     # 2. Fetch Aggregated Performance (Average ROI/DD per strategy)
-    # We want to display dot for each strategy that has backtests, or at least recent ones.
-    # Join with BacktestResult
-    results = db.query(BacktestResult).all()
+    results = db.query(BacktestResult).order_by(BacktestResult.timestamp.desc()).all()
 
     # Map Strategy ID -> Stats
     perf_map = {}
     for r in results:
         sid = r.strategy_id
         if sid not in perf_map:
-            perf_map[sid] = {'roi': [], 'dd': []}
+            perf_map[sid] = {
+                'roi': [],
+                'dd': [],
+                'latest_id': r.id # First result is latest due to sort
+            }
         perf_map[sid]['roi'].append(r.roi)
         perf_map[sid]['dd'].append(r.max_drawdown)
 
-    # Generate Matrix Data
+    # Generate Matrix Data & Leaderboard
     matrix_data = []
     leaderboard = []
 
@@ -569,8 +571,9 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
         if s.id in perf_map:
             avg_roi = np.mean(perf_map[s.id]['roi'])
             avg_dd = np.mean(perf_map[s.id]['dd'])
+            latest_id = perf_map[s.id]['latest_id']
 
-            # For matrix: x=DD, y=ROI
+            # Matrix Data: Include ALL strategies with results (Issue 3)
             matrix_data.append({
                 'id': s.id,
                 'x': avg_dd,
@@ -578,22 +581,23 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
                 'text': f"{s.name} (Gen {s.generation})"
             })
 
-            # For Leaderboard
+            # Leaderboard (Top 20 will be filtered after sort)
             leaderboard.append({
                 'strategy': s,
                 'roi': avg_roi,
                 'max_drawdown': avg_dd,
-                'win_rate': 0 # Need to fetch win rate too if we want it
+                'win_rate': 0, # Could calc avg winrate if needed
+                'last_result_id': latest_id
             })
 
     # Sort Leaderboard by ROI
     leaderboard.sort(key=lambda x: x['roi'], reverse=True)
-    leaderboard = leaderboard[:20]
+    leaderboard_top_20 = leaderboard[:20]
 
     return templates.TemplateResponse("strategies.html", {
         "request": request,
         "matrix_data": matrix_data,
-        "leaderboard": leaderboard
+        "leaderboard": leaderboard_top_20
     })
 
 @app.post("/strategies/delete")

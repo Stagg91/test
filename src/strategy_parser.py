@@ -65,7 +65,23 @@ class StrategyParser:
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
-                        df = pd.concat([df, result], axis=1)
+                         # Handle multi-column result merge (e.g. MACD returning 3 cols)
+                        if isinstance(result, pd.DataFrame):
+                            # Check for column collisions
+                            to_concat = []
+                            for col in result.columns:
+                                if col not in df.columns:
+                                    to_concat.append(result[col])
+                            if to_concat:
+                                df = pd.concat([df] + to_concat, axis=1)
+                        elif isinstance(result, pd.Series):
+                            # If series has name, use it, else generic
+                            if result.name:
+                                df[result.name] = result
+                            else:
+                                # Fallback? Usually TALib returns named series or we rely on assignment
+                                # TALib methods return Series without name set usually.
+                                pass
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -118,7 +134,7 @@ class StrategyParser:
         except Exception as e:
             msg = f"Logic Evaluation Error: {e}"
             print(msg)
-            traceback.print_exc()
+            # traceback.print_exc() # Less noise
             log_sync(msg, {"entry": entry_logic, "exit": exit_logic})
 
         # Final Clean: Remove duplicate columns if any crept in
