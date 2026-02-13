@@ -86,11 +86,11 @@ def evolution_loop():
                     if current_gen == 0:
                          # Initial Gen
                          loop.run_until_complete(breeder.create_generation_zero(count=3))
-                         loop.run_until_complete(breeder.evaluate_population(generation=0, symbol=target_symbol, start_time=start_ts))
+                         loop.run_until_complete(breeder.evaluate_population(generation=0, symbol=None, start_time=start_ts))
                     else:
                          # Evolve
-                         loop.run_until_complete(breeder.evaluate_population(generation=current_gen, symbol=target_symbol, start_time=start_ts))
-                         loop.run_until_complete(breeder.breed_next_generation(current_gen=current_gen, symbol=target_symbol))
+                         loop.run_until_complete(breeder.evaluate_population(generation=current_gen, symbol=None, start_time=start_ts))
+                         loop.run_until_complete(breeder.breed_next_generation(current_gen=current_gen, symbol=None))
 
                          # Promotion Logic (Fitness Threshold)
                          # We check the best of the current gen
@@ -119,7 +119,7 @@ def evolution_loop():
             print(f"Evolution Loop Error: {e}")
             traceback.print_exc()
 
-        time.sleep(60) # Check every minute
+        time.sleep(5) # Check frequently (5s) for responsiveness
 
 def bot_loop():
     """

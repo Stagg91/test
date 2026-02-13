@@ -55,61 +55,89 @@ class GeneticBreeder:
     async def evaluate_population(self, generation=0, symbol="BTCUSDT", start_time=None):
         """
         Runs vectorized backtests on all strategies of a specific generation.
+        Supports multi-pair evaluation if 'symbol' is None (iterates through configured pairs).
         """
         strategies = self.db.query(Strategy).filter(Strategy.generation == generation).all()
-        await LabLogger.log("EVO", f"Evaluating {len(strategies)} strategies for Gen {generation} on {symbol}...")
-
-        de = DataEngine()
-        if start_time:
-             # Fetch data from start_time
-             df = de.fetch_ohlcv(symbol, interval="60", start_time=start_time)
-        else:
-             # Default fallback
-             df = de.fetch_ohlcv(symbol, interval="60", limit=1000)
-
-        if df.empty:
-            await LabLogger.log("ERROR", f"No data for {symbol}")
+        if not strategies:
             return []
 
-        bt = Backtester(df, initial_balance=10000)
+        # Get settings for pairs and time range
+        settings = self.db.query(Settings).first()
+
+        # Determine Symbols
+        symbols = [symbol] if symbol else ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Default list
+
+        # Determine Start Time from Settings if not provided
+        if not start_time and settings:
+             # Calculate from lookback
+             lookback_val = settings.evolution_lookback_value or 3
+             lookback_unit = settings.evolution_lookback_unit or "Months"
+
+             seconds_per_unit = {
+                "Hours": 3600,
+                "Days": 86400,
+                "Weeks": 604800,
+                "Months": 2592000,
+                "Years": 31536000
+             }
+             seconds_back = lookback_val * seconds_per_unit.get(lookback_unit, 2592000)
+             start_time = int((time.time() - seconds_back) * 1000)
+
         results = []
+        de = DataEngine()
 
-        for s in strategies:
-            try:
-                # Load Recipe
-                if not s.content_json:
-                    # Legacy or empty?
-                    continue
+        for current_symbol in symbols:
+            await LabLogger.log("EVO", f"Evaluating Gen {generation} on {current_symbol}...")
 
-                recipe = StrategyRecipe(**s.content_json)
+            # Fetch data
+            if start_time:
+                df = de.fetch_ohlcv(current_symbol, interval="60", start_time=start_time)
+            else:
+                df = de.fetch_ohlcv(current_symbol, interval="60", limit=1000)
 
-                # Run Backtest
-                res = bt.run_vectorized_backtest(recipe)
+            if df.empty or len(df) < 50:
+                await LabLogger.log("EVO", f"Skipping {current_symbol} (Insufficient Data)")
+                continue
 
-                # Save Result
-                br = BacktestResult(
-                    strategy_id=s.id,
-                    symbol=symbol,
-                    start_date=str(df.iloc[0]['startTime']),
-                    end_date=str(df.iloc[-1]['startTime']),
-                    roi=res['roi_percent'],
-                    sharpe=res['sharpe'],
-                    max_drawdown=res['max_drawdown'],
-                    win_rate=res['win_rate'],
-                    trades_count=res['total_trades'],
-                    metrics_json=json.dumps(res), # Full details including fitness
-                    timestamp=time.time()
-                )
-                self.db.add(br)
-                results.append((s, res))
+            bt = Backtester(df, initial_balance=10000)
 
-                await LabLogger.log("EVO", f"Evaluated {s.name}: ROI={res['roi_percent']:.2f}%, DD={res['max_drawdown']:.2f}%, Fit={res['fitness']:.2f}")
+            for s in strategies:
+                try:
+                    # Load Recipe
+                    if not s.content_json: continue
 
-            except Exception as e:
-                await LabLogger.log("ERROR", f"Error evaluating strategy {s.id}: {e}")
-                traceback.print_exc()
+                    recipe = StrategyRecipe(**s.content_json)
 
-        self.db.commit()
+                    # Run Backtest
+                    res = bt.run_vectorized_backtest(recipe)
+
+                    # Save Result
+                    br = BacktestResult(
+                        strategy_id=s.id,
+                        symbol=current_symbol,
+                        start_date=str(df.iloc[0]['startTime']),
+                        end_date=str(df.iloc[-1]['startTime']),
+                        roi=res['roi_percent'],
+                        sharpe=res['sharpe'],
+                        max_drawdown=res['max_drawdown'],
+                        win_rate=res['win_rate'],
+                        trades_count=res['total_trades'],
+                        metrics_json=json.dumps(res),
+                        timestamp=time.time()
+                    )
+                    self.db.add(br)
+                    results.append((s, res))
+
+                    # Only log significant results to avoid spam
+                    if res['total_trades'] > 0:
+                        await LabLogger.log("EVO", f"[{current_symbol}] {s.name}: ROI={res['roi_percent']:.2f}%, Fit={res['fitness']:.2f}")
+
+                except Exception as e:
+                    await LabLogger.log("ERROR", f"Error evaluating strategy {s.id} on {current_symbol}: {e}")
+                    traceback.print_exc()
+
+            self.db.commit()
+
         return results
 
     async def breed_next_generation(self, current_gen=0, symbol="BTCUSDT"):
