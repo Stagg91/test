@@ -69,8 +69,55 @@ class Backtester:
             entries = (trades_mask == 1).sum()
 
             df['trade_id'] = (trades_mask == 1).cumsum()
+
+            # --- Detailed Trade Log Reconstruction ---
+            detailed_trades = []
             active_trades = df[df['position'] == 1]
+
             if not active_trades.empty:
+                # Group by trade_id to get entry/exit details
+                grouped = active_trades.groupby('trade_id')
+
+                for tid, group in grouped:
+                    try:
+                        entry_idx = group.index[0]
+                        exit_idx = group.index[-1]
+
+                        # Entry Details
+                        entry_time = str(df.loc[entry_idx, 'startTime']) # Ensure string for JSON
+                        entry_price = float(df.loc[entry_idx, 'close'])
+
+                        # Exit Details (Look at the next candle AFTER the group ends, where position becomes 0)
+                        # The last candle in 'group' is still IN the trade. The exit happens on the next candle open/close.
+                        # Ideally, we exit at the close of the signal change.
+
+                        # Safe check for end of dataframe
+                        if exit_idx + 1 < len(df):
+                            exit_price = float(df.loc[exit_idx + 1, 'close'])
+                            exit_time = str(df.loc[exit_idx + 1, 'startTime'])
+                        else:
+                            # Still open at end of data
+                            exit_price = float(df.loc[exit_idx, 'close'])
+                            exit_time = "Open"
+
+                        # Calculate Trade PnL
+                        # Exact calculation: Product of (1+returns) for this trade period
+                        trade_period_returns = group['strategy_return']
+                        pnl_fraction = (1 + trade_period_returns).prod() - 1
+                        pnl_percent = pnl_fraction * 100
+                        pnl_abs = self.initial_balance * pnl_fraction # Approximation based on initial capital, real backtest would track rolling balance per trade
+
+                        detailed_trades.append({
+                            "timestamp": entry_time,
+                            "entry": entry_price,
+                            "exit": exit_price,
+                            "pnl": pnl_percent,
+                            "pnl_abs": pnl_abs
+                        })
+                    except Exception as e:
+                        # Skip malformed trade
+                        continue
+
                 trade_returns_exact = active_trades.groupby('trade_id')['strategy_return'].apply(lambda x: (1 + x).prod() - 1)
                 wins = (trade_returns_exact > 0).sum()
                 total_trades = entries
@@ -84,6 +131,11 @@ class Backtester:
             if dd_abs < 0.001: dd_abs = 0.001
             fitness = total_return / dd_abs
 
+            # Sanitize Equity Curve (Handle NaNs)
+            equity_curve = df['equity'].ffill().fillna(self.initial_balance).tolist()
+            # Ensure no Infinity
+            equity_curve = [float(x) if np.isfinite(x) else 0.0 for x in equity_curve]
+
             return {
                 "roi_percent": total_return,
                 "max_drawdown": max_drawdown,
@@ -91,7 +143,8 @@ class Backtester:
                 "win_rate": win_rate,
                 "total_trades": total_trades,
                 "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "equity_curve": equity_curve,
+                "trades": detailed_trades  # Add detailed log
             }
 
         except Exception as e:
@@ -103,7 +156,9 @@ class Backtester:
                 "roi_percent": -100,
                 "max_drawdown": -100,
                 "fitness": -100,
-                "error": str(e)
+                "error": str(e),
+                "trades": [],
+                "equity_curve": []
             }
 
     def run_strategy_instance(self, strategy_instance):

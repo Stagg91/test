@@ -3,12 +3,13 @@
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fa-solid fa-flask text-gold"></i> Strategy Laboratory</h2>
+        <h2><i class="fa-solid fa-flask text-gold"></i> Strategy Library</h2>
         <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#generatePanel">
             <i class="fa-solid fa-plus"></i> New Strategy
         </button>
     </div>
 
+    <!-- Generator Panel -->
     <div class="collapse mb-4" id="generatePanel">
         <div class="card bg-dark border-gold">
             <div class="card-header border-secondary text-gold">Generate New Strategies (AI)</div>
@@ -28,131 +29,94 @@
         </div>
     </div>
 
-    <h3>Strategy Library</h3>
-    <p class="text-muted small">Strategies are grouped by lineage. Click to expand.</p>
-
-    <form action="/strategies/delete" method="post" id="deleteForm">
-    <div class="mb-3 text-end">
-        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies?')">
-            <i class="fa-solid fa-trash"></i> Delete Selected
-        </button>
-    </div>
-
-    <div class="accordion" id="strategyAccordion">
-        {% for s in strategies %}
-        <div class="accordion-item bg-dark border-secondary mb-2">
-            <h2 class="accordion-header" id="heading{{ s.id }}">
-                <div class="d-flex align-items-center w-100 bg-dark text-white p-2">
-                    <div class="me-2">
-                        <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
-                    </div>
-                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
-                        <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
-                        <span class="fw-bold me-auto">{{ s.name }}</span>
-
-                        {% if s.is_active %}
-                        <span class="badge bg-success me-2">ACTIVE</span>
-                        {% endif %}
-
-                        {% if children_map[s.id] %}
-                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                        {% endif %}
-                    </button>
+    <!-- Performance Matrix -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-dark border-secondary">
+                <div class="card-header border-secondary">
+                    <i class="fa-solid fa-chart-scatter"></i> Strategy Performance Matrix (Top 50)
                 </div>
-            </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    {% if children_map[s.id] %}
-                    <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                    {% endif %}
-                </button>
-            </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    <!-- Parent Details -->
-                    <div class="row mb-3">
-                        <div class="col-md-8">
-                            <p class="small text-muted mb-1">Strategy ID: {{ s.id }} | Type: {{ s.type }}</p>
-                            <!-- Logic Preview -->
-                            <div class="bg-black p-2 rounded border border-secondary font-monospace small text-success mb-2">
-                                {% if s.content_json %}
-                                    <strong>Entries:</strong> {{ s.content_json.entry_logic }}<br>
-                                    <strong>Exits:</strong> {{ s.content_json.exit_logic }}
-                                {% else %}
-                                    Legacy Code Strategy
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-md-4 text-end">
-                             <div class="btn-group-vertical w-100">
-                                {% if not s.is_active %}
-                                <form action="/strategies/activate/{{ s.id }}" method="post">
-                                    <button class="btn btn-sm btn-outline-success w-100 mb-1">Activate</button>
-                                </form>
-                                {% else %}
-                                <form action="/strategies/deactivate/{{ s.id }}" method="post">
-                                    <button class="btn btn-sm btn-outline-danger w-100 mb-1">Deactivate</button>
-                                </form>
-                                {% endif %}
-                                <button class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
-                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Children List -->
-                    {% if children_map[s.id] %}
-                        <h6 class="text-info mt-3 border-bottom border-secondary pb-2">Evolution History / Versions</h6>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-dark table-hover align-middle">
-                                <thead>
-                                    <tr>
-                                        <th>Gen</th>
-                                        <th>Name</th>
-                                        <th>Created</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for child in children_map[s.id]|sort(attribute='generation', reverse=True) %}
-                                    <tr>
-                                        <td><span class="badge bg-secondary">{{ child.generation }}</span></td>
-                                        <td>
-                                            {{ child.name }}
-                                            {% if child.is_active %}<span class="badge bg-success ms-1">ACTIVE</span>{% endif %}
-                                        </td>
-                                        <td><small class="text-muted">{{ "%.1f"|format(time_since(child.created_at)) }}h ago</small></td> <!-- Need helper? -->
-                                        <td>
-                                            <div class="btn-group btn-group-sm">
-                                                {% if not child.is_active %}
-                                                <form action="/strategies/activate/{{ child.id }}" method="post">
-                                                    <button class="btn btn-outline-success" title="Activate"><i class="fa-solid fa-power-off"></i></button>
-                                                </form>
-                                                {% else %}
-                                                <form action="/strategies/deactivate/{{ child.id }}" method="post">
-                                                    <button class="btn btn-outline-danger" title="Deactivate"><i class="fa-solid fa-stop"></i></button>
-                                                </form>
-                                                {% endif %}
-                                                <button class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% endif %}
-
+                <div class="card-body p-0">
+                    <div id="performanceMatrix" style="width:100%;height:500px;"></div>
+                </div>
+                <div class="card-footer text-muted small">
+                    Click on a dot to view strategy details and options.
+                    X-Axis: Max Drawdown (Risk), Y-Axis: Total ROI (Reward).
                 </div>
             </div>
         </div>
-        {% endfor %}
     </div>
-    </form>
+
+    <!-- Top 20 Leaderboard -->
+    <h3>Top 20 Leaderboard</h3>
+    <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Strategy Name</th>
+                    <th>Gen</th>
+                    <th>ROI</th>
+                    <th>Win Rate</th>
+                    <th>Drawdown</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in leaderboard %}
+                <tr>
+                    <td><span class="badge bg-secondary">#{{ loop.index }}</span></td>
+                    <td class="fw-bold text-gold">{{ item.strategy.name }}</td>
+                    <td><span class="badge bg-dark border border-secondary">{{ item.strategy.generation }}</span></td>
+                    <td class="{{ 'text-success' if item.roi > 0 else 'text-danger' }}">{{ "%.2f"|format(item.roi) }}%</td>
+                    <td>{{ "%.1f"|format(item.win_rate) }}%</td>
+                    <td class="text-danger">{{ "%.2f"|format(item.max_drawdown) }}%</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-info" onclick="openStrategyModal('{{ item.strategy.id }}')">
+                            <i class="fa-solid fa-eye"></i> View
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
 </div>
 
-<!-- Backtest Modal (Placeholder for Step 4) -->
+<!-- Strategy Detail Modal -->
+<div class="modal fade" id="strategyModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-white border-gold">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="modalStratTitle">Strategy Details</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="modalContent">
+            <!-- Dynamic Content -->
+            <div class="spinner-border text-gold" role="status"></div> Loading...
+        </div>
+        <hr class="border-secondary">
+        <div class="d-flex justify-content-between">
+             <div>
+                <form id="activateForm" action="" method="post" style="display:inline;">
+                    <button type="submit" class="btn btn-success"><i class="fa-solid fa-power-off"></i> Activate</button>
+                </form>
+                <form id="deactivateForm" action="" method="post" style="display:inline;">
+                    <button type="submit" class="btn btn-danger"><i class="fa-solid fa-stop"></i> Deactivate</button>
+                </form>
+             </div>
+             <button class="btn btn-warning" onclick="openBacktestModalFromDetail()">
+                 <i class="fa-solid fa-play"></i> Run Backtest
+             </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Backtest Modal (Reused) -->
 <div class="modal fade" id="backtestModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content bg-dark text-white border-gold">
@@ -161,7 +125,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <form id="backtestForm" action="/run_backtest" method="post" target="_blank"> <!-- Open in new tab? or redirect -->
+        <form id="backtestForm" action="/run_backtest" method="post" target="_blank">
              <input type="hidden" name="strategy_mode" value="ai">
              <input type="hidden" name="strategy_id" id="modalStratId">
 
@@ -194,7 +158,6 @@
                  <input type="number" name="initial_balance" value="1000" class="form-control bg-black text-white border-secondary">
              </div>
 
-             <!-- Date Range Inputs (Step 4) -->
              <div class="row">
                  <div class="col-6 mb-3">
                      <label>Start Date</label>
@@ -215,14 +178,122 @@
   </div>
 </div>
 
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script>
-function openBacktestModal(id, name) {
-    document.getElementById('modalStratId').value = id;
-    document.getElementById('modalStratName').value = name;
-    // Set Today
-    document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
-    new bootstrap.Modal(document.getElementById('backtestModal')).show();
-}
-</script>
+    // --- 1. Performance Matrix ---
+    var matrixData = {{ matrix_data|tojson }};
 
+    var trace1 = {
+      x: matrixData.map(d => d.x), // Max Drawdown (Keep as negative for visual intuition? Usually DD is negative. Let's assume input is negative e.g. -15)
+      y: matrixData.map(d => d.y), // ROI
+      mode: 'markers',
+      type: 'scatter',
+      text: matrixData.map(d => d.text),
+      customdata: matrixData.map(d => d.id),
+      marker: {
+        size: 12,
+        color: matrixData.map(d => d.y), // Color by ROI
+        colorscale: 'Viridis',
+        showscale: true,
+        line: { color: 'white', width: 1 }
+      },
+      hovertemplate: '<b>%{text}</b><br>ROI: %{y:.2f}%<br>DD: %{x:.2f}%<extra></extra>'
+    };
+
+    var layout = {
+      title: false,
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#fff' },
+      xaxis: { title: 'Max Drawdown (%)', gridcolor: '#444' },
+      yaxis: { title: 'Total ROI (%)', gridcolor: '#444' },
+      hovermode: 'closest'
+    };
+
+    Plotly.newPlot('performanceMatrix', [trace1], layout);
+
+    // --- 2. Interaction ---
+    var plotDiv = document.getElementById('performanceMatrix');
+    plotDiv.on('plotly_click', function(data){
+        var pt = data.points[0];
+        var stratId = pt.customdata;
+        openStrategyModal(stratId);
+    });
+
+    // --- 3. Modal Logic ---
+    // Store current strat ID for backtest transfer
+    let currentStratId = null;
+    let currentStratName = "";
+
+    function openStrategyModal(id) {
+        currentStratId = id;
+        // Fetch Details (AJAX or preloaded? Let's use AJAX for scalability)
+        // For now, we don't have a dedicated API for single strat detail JSON.
+        // We can create a simple endpoint or just reload page.
+        // Let's implement a simple fetch from existing endpoint logic if possible,
+        // OR just fill basic info if we had it in DOM.
+
+        // Since we don't have a dedicated API, let's redirect to backtest result page?
+        // No, user wants popup.
+        // Let's use the 'strategies' list passed to template to find data in JS if possible?
+        // We only passed 'leaderboard' (top 20). The clicked dot might be outside top 20.
+        // We need a /api/strategy/{id} endpoint.
+        // For this plan, let's assume we add a quick fetch script or just use what we have.
+
+        // Quick Fix: Redirect to backtest result of that strategy if available?
+        // Better: Fetch from /strategies/backtest/{id} triggers a run.
+
+        // Let's just fetch basic info from a new endpoint we will add to app.py?
+        // Or simpler: Just populate with placeholder and buttons for now,
+        // as the user asked for "viewing the card details".
+
+        fetch(`/api/strategy/${id}`)
+            .then(r => r.json())
+            .then(data => {
+                currentStratName = data.name;
+                document.getElementById('modalStratTitle').innerText = data.name;
+
+                let html = `
+                    <p><strong>Generation:</strong> ${data.generation}</p>
+                    <p><strong>Type:</strong> ${data.type}</p>
+                    <div class="bg-black p-3 rounded font-monospace small text-success mb-3">
+                        <strong>Entries:</strong> ${data.entry_logic}<br>
+                        <strong>Exits:</strong> ${data.exit_logic}
+                    </div>
+                    <p class="text-muted small">Created: ${data.created_at}</p>
+                `;
+                document.getElementById('modalContent').innerHTML = html;
+
+                // Update Actions
+                document.getElementById('activateForm').action = `/strategies/activate/${id}`;
+                document.getElementById('deactivateForm').action = `/strategies/deactivate/${id}`;
+
+                if(data.is_active) {
+                    document.getElementById('activateForm').style.display = 'none';
+                    document.getElementById('deactivateForm').style.display = 'inline';
+                } else {
+                    document.getElementById('activateForm').style.display = 'inline';
+                    document.getElementById('deactivateForm').style.display = 'none';
+                }
+
+                new bootstrap.Modal(document.getElementById('strategyModal')).show();
+            })
+            .catch(e => {
+                console.error(e);
+                alert("Error loading strategy details.");
+            });
+    }
+
+    function openBacktestModalFromDetail() {
+        // Close detail modal
+        bootstrap.Modal.getInstance(document.getElementById('strategyModal')).hide();
+
+        // Open Backtest Modal
+        document.getElementById('modalStratId').value = currentStratId;
+        document.getElementById('modalStratName').value = currentStratName;
+        document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
+
+        new bootstrap.Modal(document.getElementById('backtestModal')).show();
+    }
+</script>
 {% endblock %}
