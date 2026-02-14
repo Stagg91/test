@@ -56,12 +56,36 @@ class StrategyParser:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
+                        # Refined Prefix Logic for Multi-Column Results (MACD, BB, ADX)
+                        # Goal: Avoid double prefixing (e.g. MACD_MACD_12_26_9) while ensuring uniqueness.
+
+                        rename_map = {}
+                        for col in result.columns:
+                            # 1. If the column ALREADY starts with the user-requested name, keep it.
+                            # Case: ind.col_name="MACD", col="MACD_12_26_9" -> Keep "MACD_12_26_9"
+                            if col.startswith(ind.col_name):
+                                rename_map[col] = col
+
+                            # 2. Special Case for MACD components (MACDs, MACDh) if base name matches
+                            # Case: ind.col_name="MACD", col="MACDs_12_26_9" -> Keep "MACDs_12_26_9"
+                            # We check if the column starts with the *indicator type* (e.g. "MACD")
+                            elif ind.name.upper() in col.upper():
+                                # If the col name contains the indicator type, we assume it's already qualified enough
+                                # unless the user asked for a totally different alias.
+                                # Heuristic: If col_name is roughly present in column, don't prefix.
+                                if ind.col_name in col:
+                                     rename_map[col] = col
+                                else:
+                                     # If aliases don't match, maybe prefix?
+                                     # But if col is "MACDs_..." and user said "MACD", we probably don't want "MACD_MACDs_..."
+                                     # We want to respect the standard naming if possible.
+                                     # Let's try to trust TALib names mostly.
+                                     rename_map[col] = col # Trust TALib names for now
+                            else:
+                                # Fallback: Prefix it
+                                rename_map[col] = f"{ind.col_name}_{col}"
+
+                        result = result.rename(columns=rename_map)
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
@@ -77,9 +101,13 @@ class StrategyParser:
                         elif isinstance(result, pd.Series):
                             # Force generated name to ensure consistency (e.g. RSI_14)
                             # and prevent accidental overwrite of 'close' if series name is inherited.
-                            param_str = "_".join([str(v) for v in params.values()])
-                            default_name = f"{ind.name.upper()}_{param_str}" if param_str else ind.name.upper()
-                            df[default_name] = result
+                            if result.name and result.name in df.columns and result.name not in ['close', 'open', 'high', 'low', 'volume']:
+                                # If it has a unique name already, use it
+                                df[result.name] = result
+                            else:
+                                param_str = "_".join([str(v) for v in params.values()])
+                                default_name = f"{ind.name.upper()}_{param_str}" if param_str else ind.name.upper()
+                                df[default_name] = result
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -118,8 +146,8 @@ class StrategyParser:
 
         try:
             # Debug: Print available columns
-            print(f"DEBUG: Available Columns for Logic: {df.columns.tolist()}")
-            print(f"DEBUG: Entry Logic: {entry_logic}")
+            # print(f"DEBUG: Available Columns for Logic: {df.columns.tolist()}")
+            # print(f"DEBUG: Entry Logic: {entry_logic}")
 
             entry_mask = df.eval(entry_logic)
             exit_mask = df.eval(exit_logic)
@@ -131,7 +159,7 @@ class StrategyParser:
             # Log signal counts
             buy_count = entry_mask.sum()
             sell_count = exit_mask.sum()
-            log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
+            # log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
 
         except Exception as e:
             msg = f"Logic Evaluation Error: {e}"

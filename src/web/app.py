@@ -443,11 +443,13 @@ async def run_backtest(
                  res = bt.run_vectorized_backtest(recipe)
 
                  # Save Result
-                 # Sanitize helper
+                 # Sanitize helper with NumPy Integer support
                  def sanitize(obj):
                      if isinstance(obj, float):
                          if np.isnan(obj) or np.isinf(obj):
                              return 0.0
+                     if isinstance(obj, (np.int64, np.int32, int)):
+                         return int(obj)
                      if isinstance(obj, dict):
                          return {k: sanitize(v) for k, v in obj.items()}
                      if isinstance(obj, list):
@@ -501,6 +503,8 @@ async def run_backtest(
                      if isinstance(obj, float):
                          if np.isnan(obj) or np.isinf(obj):
                              return 0.0
+                     if isinstance(obj, (np.int64, np.int32, int)):
+                         return int(obj)
                      if isinstance(obj, dict):
                          return {k: sanitize(v) for k, v in obj.items()}
                      if isinstance(obj, list):
@@ -762,6 +766,8 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
                      if isinstance(obj, float):
                          if np.isnan(obj) or np.isinf(obj):
                              return 0.0
+                     if isinstance(obj, (np.int64, np.int32, int)):
+                         return int(obj)
                      if isinstance(obj, dict):
                          return {k: sanitize(v) for k, v in obj.items()}
                      if isinstance(obj, list):
