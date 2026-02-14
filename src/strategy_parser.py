@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import traceback
+import re
 from src.strategies.schemas import StrategyRecipe
 from src.logger import LabLogger
 from src.ta_lib import TALib
@@ -125,15 +126,30 @@ class StrategyParser:
         entry_logic = strategy.entry_logic
         exit_logic = strategy.exit_logic
 
-        # Additional Sanitization: Replace . with _ in logic strings if they match column pattern
-        # This handles cases where logic string has "2.0" but column was renamed to "2_0"
-        # However, we must be careful not to replace actual floats like 0.5
-        # The rename_map handles columns that *existed* and were renamed.
-        # But if the user typed "BBU_20_2.0" manually in the logic, we need to map it.
-
+        # Sanitization 1: Replace known renamed columns (e.g. "BBU_2.0" -> "BBU_2_0")
         for old, new in rename_map.items():
             entry_logic = entry_logic.replace(old, new)
             exit_logic = exit_logic.replace(old, new)
+
+        # Sanitization 2: Regex replace float dots in identifiers (e.g. BBU_20_2.0 -> BBU_20_2_0)
+        # We look for patterns where a dot is preceded by a digit and followed by a digit, inside a word?
+        # Actually, standard variables in Python/Pandas eval cannot have dots.
+        # So "BBU_20_2.0" is interpreted as attribute access or syntax error if BBU_20_2 is not an object.
+        # We want to replace "2.0" with "2_0" ONLY if it is part of a variable name (like BBU_20_2.0).
+        # But "2.0" as a numeric literal (e.g. RSI > 50.5) MUST stay as 50.5.
+
+        # Heuristic: Replace dot with underscore if it follows a letter/underscore/digit sequence that looks like a variable prefix?
+        # Better: Since we know TALib converts std dev floats to `_`, e.g. `2_0`, we should apply the same transformation to the logic string.
+        # Regex: Find patterns like `_(\d+)\.(\d+)` (underscore, digits, dot, digits) and replace with `_\1_\2`.
+        # Example: `BBU_20_2.0` -> `BBU_20_2_0`.
+
+        def replace_dots_in_vars(text):
+            # Regex to match `_2.0` style patterns at the end of words
+            # matches: _ followed by digits, then dot, then digits.
+            return re.sub(r'_(\d+)\.(\d+)', r'_\1_\2', text)
+
+        entry_logic = replace_dots_in_vars(entry_logic)
+        exit_logic = replace_dots_in_vars(exit_logic)
 
         # 4. Evaluate Logic
         df['signal'] = 0
