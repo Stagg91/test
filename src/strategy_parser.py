@@ -118,7 +118,8 @@ class StrategyParser:
 
         try:
             # Debug: Print available columns
-            # print(f"DEBUG: Available Columns: {df.columns.tolist()}")
+            print(f"DEBUG: Available Columns for Logic: {df.columns.tolist()}")
+            print(f"DEBUG: Entry Logic: {entry_logic}")
 
             entry_mask = df.eval(entry_logic)
             exit_mask = df.eval(exit_logic)
@@ -136,7 +137,7 @@ class StrategyParser:
             msg = f"Logic Evaluation Error: {e}"
             print(msg)
             # traceback.print_exc() # Less noise
-            log_sync(msg, {"entry": entry_logic, "exit": exit_logic})
+            log_sync(msg, {"entry": entry_logic, "exit": exit_logic, "cols": df.columns.tolist()})
 
         # Final Clean: Remove duplicate columns if any crept in
         df = df.loc[:, ~df.columns.duplicated()]
