@@ -14,26 +14,16 @@ def reproduction():
         'volume': np.random.uniform(100, 1000, 100)
     })
 
-    # Debug TALib direct
-    print("--- Debugging TALib.rsi ---")
-    rsi = TALib.rsi(df['close'], length=14)
-    print(f"RSI Type: {type(rsi)}")
-    print(f"RSI Name: {rsi.name}")
-    print(f"RSI Head:\n{rsi.head()}")
-
-    # 2. Define Problematic Strategy (from User logs)
-    # Error: name 'MACD_12_26_9' is not defined
+    # 2. Define Problematic Strategy (ADX components)
     recipe = StrategyRecipe(
-        name="Repro Strat",
-        description="Test",
+        name="Repro Strat ADX",
+        description="Test ADX components",
         indicators=[
-            IndicatorConfig(name="macd", params={"fast": 12, "slow": 26, "signal": 9}),
-            IndicatorConfig(name="adx", params={"length": 14}),
+            IndicatorConfig(name="adx", params={"length": 14}, col_name="ADX_14"), # col_name matches main output
             IndicatorConfig(name="rsi", params={"length": 14}),
-            IndicatorConfig(name="ema", params={"length": 100}, col_name="EMA_100")
         ],
-        entry_logic="close > EMA_100 and MACD_12_26_9 > MACDs_12_26_9 and RSI_14 > 50",
-        exit_logic="MACD_12_26_9 < MACDs_12_26_9 or close < EMA_100"
+        entry_logic="ADX_14 > 25 and DMP_14 > DMN_14", # Uses DMP/DMN directly
+        exit_logic="DMP_14 < DMN_14"
     )
 
     parser = StrategyParser()
@@ -52,8 +42,8 @@ def reproduction():
 
     except Exception as e:
         print(f"--- PARSER CRASHED: {e} ---")
-        import traceback
-        traceback.print_exc()
+        # import traceback
+        # traceback.print_exc()
 
 if __name__ == "__main__":
     reproduction()

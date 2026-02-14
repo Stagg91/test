@@ -66,21 +66,15 @@ class StrategyParser:
                             if col.startswith(ind.col_name):
                                 rename_map[col] = col
 
-                            # 2. Special Case for MACD components (MACDs, MACDh) if base name matches
-                            # Case: ind.col_name="MACD", col="MACDs_12_26_9" -> Keep "MACDs_12_26_9"
-                            # We check if the column starts with the *indicator type* (e.g. "MACD")
-                            elif ind.name.upper() in col.upper():
-                                # If the col name contains the indicator type, we assume it's already qualified enough
-                                # unless the user asked for a totally different alias.
-                                # Heuristic: If col_name is roughly present in column, don't prefix.
-                                if ind.col_name in col:
-                                     rename_map[col] = col
-                                else:
-                                     # If aliases don't match, maybe prefix?
-                                     # But if col is "MACDs_..." and user said "MACD", we probably don't want "MACD_MACDs_..."
-                                     # We want to respect the standard naming if possible.
-                                     # Let's try to trust TALib names mostly.
-                                     rename_map[col] = col # Trust TALib names for now
+                            # 2. Special Case for MACD components (MACDs, MACDh)
+                            elif ind.name.lower() == "macd" and ("MACD" in col or "MACDs" in col or "MACDh" in col):
+                                rename_map[col] = col
+
+                            # 3. Special Case for ADX components (DMP, DMN)
+                            # Case: ind.col_name="ADX_14", col="DMP_14" -> Keep "DMP_14"
+                            elif ind.name.lower() == "adx" and ("DMP" in col or "DMN" in col):
+                                rename_map[col] = col
+
                             else:
                                 # Fallback: Prefix it
                                 rename_map[col] = f"{ind.col_name}_{col}"
