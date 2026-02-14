@@ -56,18 +56,24 @@ class StrategyParser:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), intelligently prefix to avoid duplication.
-                        # If the column name already starts with ind.col_name, we don't add the prefix again.
-                        new_cols = []
-                        for col in result.columns:
-                            # Check if the column name already starts with the intended prefix
-                            # e.g., col_name="ADX_14", col="ADX_14" -> keep "ADX_14"
-                            if col.startswith(ind.col_name):
-                                new_cols.append(col)
-                            else:
-                                new_cols.append(f"{ind.col_name}_{col}")
+                        # For DF results (MACD, BB), check if the col_name exactly matches one of the standard columns.
+                        # If so, assume the user intends to use the standard column names (e.g. MACD_12_26_9, MACDs_...)
+                        # and apply NO prefixes at all. This prevents breaking references to sibling columns.
 
-                        result.columns = new_cols
+                        if ind.col_name in result.columns:
+                            # Standard naming detected; use as-is.
+                            pass
+                        else:
+                            # User provided a custom alias (e.g. "MyMACD"), so we prefix everything.
+                            # But we still check for redundancy just in case.
+                            new_cols = []
+                            for col in result.columns:
+                                if col.startswith(ind.col_name):
+                                    new_cols.append(col)
+                                else:
+                                    new_cols.append(f"{ind.col_name}_{col}")
+                            result.columns = new_cols
+
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:

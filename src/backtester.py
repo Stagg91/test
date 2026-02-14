@@ -84,14 +84,24 @@ class Backtester:
             if dd_abs < 0.001: dd_abs = 0.001
             fitness = total_return / dd_abs
 
+            # Helper to sanitize numpy types for JSON serialization
+            def sanitize(val):
+                if isinstance(val, (np.integer, np.int64)):
+                    return int(val)
+                elif isinstance(val, (np.floating, np.float64)):
+                    return float(val)
+                elif isinstance(val, list):
+                    return [sanitize(i) for i in val]
+                return val
+
             return {
-                "roi_percent": total_return,
-                "max_drawdown": max_drawdown,
-                "sharpe": sharpe,
-                "win_rate": win_rate,
-                "total_trades": total_trades,
-                "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "roi_percent": sanitize(total_return),
+                "max_drawdown": sanitize(max_drawdown),
+                "sharpe": sanitize(sharpe),
+                "win_rate": sanitize(win_rate),
+                "total_trades": sanitize(total_trades),
+                "fitness": sanitize(fitness),
+                "equity_curve": sanitize(df['equity'].tolist())
             }
 
         except Exception as e:
