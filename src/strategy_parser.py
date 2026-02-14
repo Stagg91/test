@@ -24,6 +24,10 @@ class StrategyParser:
         # Work on a copy
         df = df.copy()
 
+        # Map for renaming columns in logic (e.g. BBU_20_2.0 -> BBU_20_2_0)
+        # And also for prefixed columns (e.g. BBU_20_2_0 -> BB_20_BBU_20_2_0)
+        rename_map = {}
+
         # 1. Apply Indicators
         for ind in strategy.indicators:
             try:
@@ -61,8 +65,14 @@ class StrategyParser:
                         # Usually col_name is used for single series.
                         # If DF, we ignore col_name or prefix it?
                         # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
-                        df = pd.concat([df, result], axis=1)
+                        prefix = f"{ind.col_name}_"
+                        new_result = result.add_prefix(prefix)
+
+                        # Track renames so logic strings using original names still work
+                        for col in result.columns:
+                            rename_map[col] = f"{prefix}{col}"
+
+                        df = pd.concat([df, new_result], axis=1)
                 else:
                      if result is not None:
                         df = pd.concat([df, result], axis=1)
@@ -75,15 +85,20 @@ class StrategyParser:
 
         # 2. Sanitize Column Names (Fix potential dots)
         # Custom TALib shouldn't produce dots, but safe to keep
-
-        rename_map = {}
         for col in df.columns:
             if "." in col:
                 new_col = col.replace(".", "_")
                 rename_map[col] = new_col
 
         if rename_map:
-            df.rename(columns=rename_map, inplace=True)
+            # Only rename columns that actually exist in DF and have dots
+            # The prefix renames (from step 1) don't need df.rename because we concatenated the NEW result
+            # But we might have added dot-columns in step 1 if we didn't prefix?
+            # Actually TALib replaces dots in bbands, so we shouldn't have dots from TALib.
+            # But just in case:
+            cols_to_rename = {k: v for k, v in rename_map.items() if k in df.columns and k != v}
+            if cols_to_rename:
+                df.rename(columns=cols_to_rename, inplace=True)
 
         # 3. Sanitize Logic Strings
         entry_logic = strategy.entry_logic
