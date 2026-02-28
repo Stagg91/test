@@ -142,29 +142,60 @@ class GeneticBreeder:
         sorted_results = sorted(results, key=lambda x: calc_fitness(x[0]), reverse=True)
         top_performers = sorted_results[:3]
 
-        parents = []
+        # Get worst performers (for contrast in prompt)
+        worst_performers = sorted_results[-3:] if len(sorted_results) > 3 else []
+
+        parents_data = []
         for br, strat in top_performers:
             if strat.content_json:
-                parents.append(StrategyRecipe(**strat.content_json))
+                parents_data.append({
+                    "id": strat.id,
+                    "name": strat.name,
+                    "roi": br.roi,
+                    "drawdown": br.max_drawdown,
+                    "recipe": strat.content_json
+                })
 
-        if not parents:
+        if not parents_data:
             return
 
-        await LabLogger.log("EVO", f"Breeding from top {len(parents)} strategies (Gen {current_gen})...")
+        # Prepare Context for Prompt
+        from src.ta_lib import TALib
+        available_indicators = [method for method in dir(TALib) if not method.startswith('__') and callable(getattr(TALib, method))]
+
+        context_str = f"""
+        Current Generation: {current_gen}
+        Available Technical Indicators: {', '.join(available_indicators)}
+
+        Top Performers (Clone & Mutate these):
+        {json.dumps([{k:v for k,v in p.items() if k!='recipe'} for p in parents_data], indent=2)}
+
+        Worst Performers (Avoid these patterns):
+        {json.dumps([{"name": s.name, "roi": br.roi, "drawdown": br.max_drawdown} for br, s in worst_performers], indent=2)}
+        """
+
+        await LabLogger.log("EVO", f"Breeding from top {len(parents_data)} strategies (Gen {current_gen})...")
 
         next_gen = current_gen + 1
 
         # Request Mutation
-        feedback = "Reduce Max Drawdown while maintaining profitability."
+        feedback = f"Goal: Create superior strategies by learning from the best. {context_str}"
 
         # Create 3 Children
         for i in range(3):
             try:
-                child_recipe = await self.ai_engine.mutate_strategy_recipe(parents, feedback)
+                # Pass full parent objects to AI? mutate_strategy_recipe expects recipes.
+                # We update mutate_strategy_recipe to handle the richer context.
+                # Actually, let's keep the signature simple and pass the 'feedback' as the context carrier,
+                # and pass the recipes as the base.
+                parent_recipes = [StrategyRecipe(**p['recipe']) for p in parents_data]
+
+                # Dynamic Feedback Injection
+                child_recipe = await self.ai_engine.mutate_strategy_recipe(parent_recipes, feedback)
 
                 if child_recipe:
                     # Rename to avoid duplicate names if AI forgets
-                    child_recipe.name = f"Gen{next_gen}_Child_{i}_{child_recipe.name}"
+                    child_recipe.name = f"Gen{next_gen}_{child_recipe.name}_{i}"
 
                     child_strat = Strategy(
                         name=child_recipe.name,

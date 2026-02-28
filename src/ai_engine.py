@@ -124,6 +124,58 @@ class AIEngine:
                  })
 
              bt = Backtester(df)
+
+             # 1. Pre-Validate Logic Strings (Check if variables exist)
+             # We need to run the parser first to see what columns are generated.
+             from src.strategy_parser import StrategyParser
+             parser = StrategyParser()
+             try:
+                 # This generates the dataframe with indicators
+                 df_indicators = parser.parse_and_execute(df, recipe)
+             except Exception as e:
+                 return False, f"Indicator Calculation Error: {e}"
+
+             # Check variables in logic
+             import re
+             available_cols = set(df_indicators.columns)
+
+             # Regex to find potential variable names (alphanumeric + underscore)
+             # Ignore numbers, keywords like 'and', 'or', 'not'
+             # This is a heuristic.
+             keywords = {'and', 'or', 'not', 'True', 'False', 'if', 'else'}
+
+             def check_logic(logic_str):
+                 if not logic_str: return None
+                 # Find all words
+                 words = re.findall(r'[a-zA-Z_][a-zA-Z0-9_.]*', logic_str)
+                 missing = []
+                 for w in words:
+                     if w in keywords: continue
+                     # Check if it looks like a number? (handled by regex start char)
+                     # Check if it is a dataframe method? (e.g. .shift) - regex includes .
+                     # If it contains ., we might need to handle it.
+                     # Simplified: Just check if it matches a column.
+
+                     # Clean potential method calls e.g. close.shift(1) -> close
+                     base_var = w.split('.')[0]
+
+                     if base_var not in available_cols:
+                         # It might be a float/int variable?
+                         # If the user uses "rsi < 30", 30 is not a column.
+                         # But regex catches [a-zA-Z], so 30 is ignored.
+                         # But what if "rsi < variable"?
+                         missing.append(base_var)
+                 return missing
+
+             missing_entry = check_logic(recipe.entry_logic)
+             if missing_entry:
+                 return False, f"Entry Logic uses undefined variables: {missing_entry}. Available: {sorted(list(available_cols))}"
+
+             missing_exit = check_logic(recipe.exit_logic)
+             if missing_exit:
+                 return False, f"Exit Logic uses undefined variables: {missing_exit}"
+
+             # 2. Run Backtest
              res = bt.run_vectorized_backtest(recipe)
 
              if "error" in res:

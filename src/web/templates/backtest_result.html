@@ -108,11 +108,11 @@
                     <tbody>
                         {% for t in trades %}
                         <tr>
-                            <td>{{ t.timestamp }}</td>
+                            <td>{{ t.entry_time }}</td>
                             <td>LONG</td> <!-- Only long supported for now -->
-                            <td>{{ "%.2f"|format(t.entry) }}</td>
-                            <td>{{ "%.2f"|format(t.exit) }}</td>
-                            <td class="{{ 'text-success' if t.pnl > 0 else 'text-danger' }}">{{ "%.2f"|format(t.pnl) }}%</td>
+                            <td>{{ "%.2f"|format(t.entry_price) }}</td>
+                            <td>{{ "%.2f"|format(t.exit_price) }}</td>
+                            <td class="{{ 'text-success' if t.pnl_percent > 0 else 'text-danger' }}">{{ "%.2f"|format(t.pnl_percent) }}%</td>
                             <td class="{{ 'text-success' if t.pnl_abs > 0 else 'text-danger' }}">{{ "%.2f"|format(t.pnl_abs) }}</td>
                         </tr>
                         {% endfor %}

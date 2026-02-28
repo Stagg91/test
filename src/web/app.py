@@ -38,6 +38,25 @@ init_db()
 
 app = FastAPI()
 
+def sanitize_json(obj):
+    """
+    Recursively convert NumPy types (int64, float64, ndarray) and handle NaNs/Infs
+    to ensure JSON serialization compatibility.
+    """
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        if np.isnan(obj) or np.isinf(obj):
+            return 0.0
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return sanitize_json(obj.tolist())
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_json(v) for v in obj]
+    return obj
+
 @app.on_event("startup")
 async def startup_event():
     import asyncio
@@ -221,23 +240,25 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/api/symbols")
 async def get_symbols(db: Session = Depends(get_db)):
-    settings = db.query(Settings).first()
-    key = settings.api_key if settings else None
-    secret = settings.api_secret if settings else None
-    testnet = settings.testnet if settings else True
+    """
+    Returns the Top 20 USDT-Perpetual pairs by 24h Volume.
+    """
+    # Reuse market watch logic to get sorted volume
+    market_data = await get_market_watch(db)
 
-    client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
-    resp = client.get_instruments()
+    # Check if market_data is empty or not list
+    if not market_data or not isinstance(market_data, list):
+        return ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
-    if resp and 'result' in resp and 'list' in resp['result']:
-        # Extract symbol names
-        symbols = [item['symbol'] for item in resp['result']['list'] if item['status'] == 'Trading']
-        symbols.sort()
-        return symbols
-    return ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+    # Extract symbols from the top 20
+    symbols = [item['symbol'] for item in market_data]
+    return symbols
 
 @app.get("/api/market_watch")
 async def get_market_watch(db: Session = Depends(get_db)):
+    """
+    Fetches market data and returns the Top 20 pairs by 24h Turnover (USDT Volume).
+    """
     settings = db.query(Settings).first()
     key = settings.api_key if settings else None
     secret = settings.api_secret if settings else None
@@ -249,20 +270,28 @@ async def get_market_watch(db: Session = Depends(get_db)):
     data = []
     if resp and 'result' in resp and 'list' in resp['result']:
         for item in resp['result']['list']:
-            # Basic fields: symbol, lastPrice, price24hPcnt
+            # Filter for USDT pairs only
+            if not item['symbol'].endswith('USDT'):
+                continue
+
             try:
                 change = float(item.get('price24hPcnt', 0)) * 100
+                turnover = float(item.get('turnover24h', 0)) # Volume in USDT
+
                 data.append({
                     'symbol': item['symbol'],
                     'price': item['lastPrice'],
-                    'change': f"{change:.2f}"
+                    'change': f"{change:.2f}",
+                    'turnover': turnover
                 })
             except:
                 continue
 
-    # Sort by volume or symbol? Let's sort by symbol for now, or maybe most volatile?
-    # Let's return all, frontend handles display limit
-    return data
+    # Sort by 24h Turnover (Volume) Descending
+    data.sort(key=lambda x: x['turnover'], reverse=True)
+
+    # Return Top 20
+    return data[:20]
 
 @app.get("/api/chart_data")
 async def get_chart_data(symbol: str = "BTCUSDT"):
@@ -418,6 +447,9 @@ async def run_backtest(
                  recipe = StrategyRecipe(**strat.content_json)
                  res = bt.run_vectorized_backtest(recipe)
 
+                 # Sanitize before saving to DB
+                 res = sanitize_json(res)
+
                  # Save Result
                  br = BacktestResult(
                     strategy_id=strat.id,
@@ -439,22 +471,6 @@ async def run_backtest(
                  if "text/html" in request.headers.get("accept", ""):
                      return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
 
-                 # Else return JSON (Legacy/Fetch)
-                 # We still generate chart JSON for legacy consumers?
-                 # ... (Omitted chart gen for speed if just JSON)
-
-                 # Helper to replace NaN
-                 def sanitize(obj):
-                     if isinstance(obj, float):
-                         if np.isnan(obj) or np.isinf(obj):
-                             return 0.0
-                     if isinstance(obj, dict):
-                         return {k: sanitize(v) for k, v in obj.items()}
-                     if isinstance(obj, list):
-                         return [sanitize(v) for v in obj]
-                     return obj
-
-                 res = sanitize(res)
                  return [{
                     "params": {"name": strat.name},
                     "metrics": res,
@@ -471,6 +487,9 @@ async def run_backtest(
 
                 instance = StrategyClass()
                 res = bt.run_strategy_instance(instance)
+
+                # Sanitize Legacy Results
+                res = sanitize_json(res)
 
                 # Save Result
                 # Walk forward result structure is different
@@ -527,6 +546,25 @@ async def run_backtest(
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
     all_strats = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
 
+    # Fetch all backtest results to find best stats
+    all_results = db.query(BacktestResult).all()
+
+    # Map strategy_id -> best result (by ROI)
+    stats_map = {}
+    for res in all_results:
+        if res.roi is None:
+            continue
+
+        if res.strategy_id not in stats_map:
+            stats_map[res.strategy_id] = res
+        else:
+            if res.roi > stats_map[res.strategy_id].roi:
+                stats_map[res.strategy_id] = res
+
+    # Attach stats to strategy objects (dynamically)
+    # We can't modify the ORM object easily without transient issues,
+    # but we can pass the map to the template.
+
     # Organize into trees
     # Map ID -> Strategy
     strat_map = {s.id: s for s in all_strats}
@@ -549,13 +587,17 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("strategies.html", {
         "request": request,
         "strategies": roots,
-        "children_map": children_map
+        "children_map": children_map,
+        "stats_map": stats_map
     })
 
 @app.post("/strategies/delete")
 async def delete_strategies(strategy_ids: List[int] = Form(...), db: Session = Depends(get_db)):
     if not strategy_ids:
         return RedirectResponse("/strategies", status_code=303)
+
+    # Delete associated backtest results
+    db.query(BacktestResult).filter(BacktestResult.strategy_id.in_(strategy_ids)).delete(synchronize_session=False)
 
     # Delete strategies
     db.query(Strategy).filter(Strategy.id.in_(strategy_ids)).delete(synchronize_session=False)
@@ -637,6 +679,9 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
 
     import json
     chart_json = None
+    trades = []
+    equity_curve = []
+
     try:
         metrics = json.loads(res.metrics_json)
         # Handle if metrics are nested under 'test' (walk-forward) or flat (legacy/run_strategy_instance)
@@ -649,37 +694,33 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         equity_curve = details.get('equity_curve', [])
 
         # Generate Chart if Strategy is JSON type
-        strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
-        if strat and strat.content_json:
-             # Need to re-run to get signals for chart?
-             # Or we could have stored chart_json in metrics? Storing full chart is heavy.
-             # Better to re-run on demand if data matches?
-             # But fetching data exactly as backtest is tricky if date range not saved precisely in DB
-             # DB has start/end date string.
+        try:
+            strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
+            if strat and strat.content_json:
+                 # Re-fetch data
+                 de = DataEngine()
+                 ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
+                 ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
 
-             # Re-fetch data
-             de = DataEngine()
-             ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
-             ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
+                 df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
 
-             # Fetch a bit more context? Or exact.
-             df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
+                 if not df.empty:
+                     from src.strategy_parser import StrategyParser
+                     parser = StrategyParser()
+                     recipe = StrategyRecipe(**strat.content_json)
+                     df_res = parser.parse_and_execute(df, recipe)
 
-             if not df.empty:
-                 from src.strategy_parser import StrategyParser
-                 parser = StrategyParser()
-                 recipe = StrategyRecipe(**strat.content_json)
-                 df_res = parser.parse_and_execute(df, recipe)
-
-                 chart_json = ChartGenerator.generate_chart_json(
-                     df_res,
-                     indicators=[ind.col_name or ind.name for ind in recipe.indicators]
-                 )
+                     chart_json = ChartGenerator.generate_chart_json(
+                         df_res,
+                         indicators=[ind.col_name or ind.name for ind in recipe.indicators]
+                     )
+        except Exception as e:
+            print(f"Chart Generation Error: {e}")
+            traceback.print_exc()
 
     except Exception as e:
         print(f"Error loading result details: {e}")
-        trades = []
-        equity_curve = []
+        traceback.print_exc()
 
     return templates.TemplateResponse("backtest_result.html", {
         "request": request,
@@ -880,6 +921,50 @@ async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int 
     # Handle NaN
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
+
+@app.get("/api/strategy_matrix")
+async def get_strategy_matrix(db: Session = Depends(get_db)):
+    """
+    Returns data for the Strategy Matrix (ROI vs Drawdown scatter plot).
+    """
+    results = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).all()
+
+    data = []
+    # Fetch initial balance from settings or assume 10000 (default in backtest)
+    # Ideally backtest_result should store initial_balance.
+    # For now, we calculate Equity based on ROI and a standard 10k or 1k.
+    # The user enters 1000 in UI usually. Let's use 1000 for visualization or percentage.
+    # Actually, ROI is %, so Equity = 1000 * (1 + roi/100).
+    initial_balance = 1000.0
+
+    for br, strat in results:
+        # Calculate Equity
+        roi = br.roi if br.roi is not None else 0.0
+        equity = initial_balance * (1 + roi / 100.0)
+
+        data.append({
+            "strategy_id": strat.id,
+            "strategy_name": strat.name,
+            "backtest_id": br.id,
+            "roi": roi,
+            "equity": equity,
+            "max_drawdown": br.max_drawdown if br.max_drawdown is not None else 0.0,
+            "win_rate": br.win_rate if br.win_rate is not None else 0.0,
+            "trades": br.trades_count,
+            "generation": strat.generation
+        })
+
+    # Sanitize to be safe (though DB floats are usually fine)
+    return sanitize_json(data)
+
+@app.get("/api/indicators")
+async def get_indicators():
+    """
+    Returns a list of available technical indicators from TALib.
+    """
+    from src.ta_lib import TALib
+    methods = [method for method in dir(TALib) if not method.startswith('__') and callable(getattr(TALib, method))]
+    return {"indicators": methods}
 
 @app.get("/lab", response_class=HTMLResponse)
 async def lab_page(request: Request, db: Session = Depends(get_db)):

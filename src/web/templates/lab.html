@@ -51,10 +51,9 @@
                                 <option value="{{ s.id }}">{{ s.name }} (Gen {{ s.generation }})</option>
                                 {% endfor %}
                             </select>
-                            <select class="form-select bg-black text-white border-secondary" name="symbol" style="max-width: 120px;">
-                                <option value="BTCUSDT">BTC</option>
-                                <option value="ETHUSDT">ETH</option>
-                                <option value="SOLUSDT">SOL</option>
+                            <select class="form-select bg-black text-white border-secondary" name="symbol" id="labSymbolSelect" style="max-width: 120px;">
+                                <!-- Populated dynamically -->
+                                <option value="BTCUSDT">BTCUSDT</option>
                             </select>
                          </div>
                     </div>
@@ -83,6 +82,9 @@
                 <!-- Use Modal trigger instead of JS function direct call -->
                 <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#aiStrategyModal" onclick="console.log('Opened AI Modal')">
                     <i class="fa-solid fa-plus"></i> New AI Idea
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#indicatorsModal" onclick="loadIndicators()">
+                    <i class="fa-solid fa-list-ul"></i> View Indicators
                 </button>
             </div>
         </div>
@@ -117,6 +119,20 @@
                     <input type="hidden" name="auto_evolve" value="{% if settings.auto_evolve %}false{% else %}true{% endif %}">
                     <a href="/settings" class="btn btn-sm btn-outline-secondary">Configure Engine</a>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Strategy Matrix (Dot Matrix) -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark text-white border-gold shadow-sm">
+            <div class="card-header border-secondary text-gold">
+                <i class="fa-solid fa-braille"></i> Strategy Performance Matrix (ROI vs Drawdown)
+            </div>
+            <div class="card-body p-2">
+                <div id="strategyMatrixChart" style="width:100%;height:400px;"></div>
             </div>
         </div>
     </div>
@@ -164,10 +180,91 @@
   </div>
 </div>
 
+<!-- Indicators List Modal -->
+<div class="modal fade" id="indicatorsModal" tabindex="-1" aria-labelledby="indicatorsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content bg-dark text-light border-info">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="indicatorsModalLabel"><i class="fa-solid fa-list-ul text-info"></i> Available Indicators</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">These indicators are available for strategy generation. AI automatically selects parameters.</p>
+        <ul id="indicatorsList" class="list-group list-group-flush bg-dark">
+            <li class="list-group-item bg-dark text-muted">Loading...</li>
+        </ul>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
 <script>
+    // 0. Strategy Matrix Plot
+    async function loadStrategyMatrix() {
+        try {
+            const res = await fetch('/api/strategy_matrix');
+            const data = await res.json();
+
+            if (!data || data.length === 0) {
+                document.getElementById('strategyMatrixChart').innerHTML = '<div class="text-center text-muted py-5">No backtest data available yet. Run simulations to populate the matrix.</div>';
+                return;
+            }
+
+            // Plot Risk (Drawdown) vs Reward (Equity)
+            // X-Axis: Equity ($) (User requested Equity on one axis)
+            // Y-Axis: Max Drawdown (%) (Risk)
+            // Or usually Risk (X) vs Reward (Y).
+            // User asked for "X axis is equity" and "one is drawdown".
+
+            const trace = {
+                x: data.map(d => d.equity),
+                y: data.map(d => Math.abs(d.max_drawdown)), // Positive Drawdown for Y axis
+                mode: 'markers',
+                type: 'scatter',
+                text: data.map(d => `<b>${d.strategy_name}</b> (ID: ${d.strategy_id})<br>Gen: ${d.generation}<br>Equity: $${d.equity.toFixed(2)}<br>ROI: ${d.roi.toFixed(2)}%<br>Max DD: ${d.max_drawdown.toFixed(2)}%`),
+                marker: {
+                    size: 12,
+                    color: data.map(d => d.roi), // Color by ROI still good
+                    colorscale: 'Plasma',
+                    colorbar: { title: 'ROI %' },
+                    line: { color: '#fff', width: 1 },
+                    opacity: 0.8
+                },
+                hovertemplate: '%{text}<extra></extra>'
+            };
+
+            const layout = {
+                title: 'Risk (Drawdown) vs Reward (Equity)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#fff' },
+                xaxis: {
+                    title: 'Total Portfolio Equity ($)',
+                    gridcolor: '#444',
+                    tickprefix: '$'
+                },
+                yaxis: {
+                    title: 'Max Drawdown (%)',
+                    gridcolor: '#444',
+                    autorange: 'reversed' // Drawdown 0 is best (top), high is bad (bottom)
+                },
+                margin: { t: 40, b: 50, l: 60, r: 20 },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('strategyMatrixChart', [trace], layout);
+        } catch (e) {
+            console.error("Matrix Error:", e);
+        }
+    }
+
     // 1. Market Scan Polling
     async function updateMarketScan() {
         try {
@@ -228,6 +325,25 @@
         }
     }
 
+    // 3. Load Indicators List
+    async function loadIndicators() {
+        const list = document.getElementById('indicatorsList');
+        try {
+            const res = await fetch('/api/indicators');
+            const data = await res.json();
+
+            if(data.indicators) {
+                let html = '';
+                data.indicators.forEach(ind => {
+                    html += `<li class="list-group-item bg-dark text-white border-secondary"><i class="fa-solid fa-code text-info me-2"></i> ${ind}</li>`;
+                });
+                list.innerHTML = html;
+            }
+        } catch(e) {
+            list.innerHTML = '<li class="list-group-item bg-dark text-danger">Error loading indicators.</li>';
+        }
+    }
+
     function logConsole(msg) {
         const c = document.getElementById('labConsole');
         c.innerHTML += `> ${msg}<br>`;
@@ -257,13 +373,44 @@
     // Init
     connectWS();
     updateMarketScan();
+    loadStrategyMatrix(); // Load Matrix
     setInterval(updateMarketScan, 10000);
 
-    // Set Default End Date to Today
-    document.addEventListener("DOMContentLoaded", function() {
+    // Set Default End Date to Today and Pre-select Symbol
+    document.addEventListener("DOMContentLoaded", async function() {
+        // Date
         const today = new Date().toISOString().split('T')[0];
         const dateInput = document.getElementById('labEndDate');
         if(dateInput) dateInput.value = today;
+
+        // Load Symbols into Workbench
+        const symbolSelect = document.getElementById('labSymbolSelect');
+        try {
+            const res = await fetch('/api/symbols');
+            const symbols = await res.json();
+            if (symbols && symbols.length > 0) {
+                symbolSelect.innerHTML = '';
+                symbols.forEach(sym => {
+                    const opt = document.createElement('option');
+                    opt.value = sym;
+                    opt.text = sym; // or sym.replace('USDT', '')
+                    symbolSelect.appendChild(opt);
+                });
+            }
+        } catch(e) {
+            console.error("Error loading symbols", e);
+        }
+
+        // Parse URL Param ?symbol=...
+        const urlParams = new URLSearchParams(window.location.search);
+        const symbolParam = urlParams.get('symbol');
+        if (symbolParam) {
+            // Wait for symbols to populate? Or set value directly (if not strictly matching)
+            // It's safer to wait or assume it exists.
+            setTimeout(() => {
+                if(symbolSelect) symbolSelect.value = symbolParam;
+            }, 500);
+        }
     });
 </script>
 {% endblock %}

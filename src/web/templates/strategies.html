@@ -31,42 +31,74 @@
     <h3>Strategy Library</h3>
     <p class="text-muted small">Strategies are grouped by lineage. Click to expand.</p>
 
-    <form action="/strategies/delete" method="post" id="deleteForm">
-    <div class="mb-3 text-end">
-        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies?')">
-            <i class="fa-solid fa-trash"></i> Delete Selected
-        </button>
+    <!-- Controls Row -->
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-6">
+            <!-- Sort Controls -->
+            <div class="input-group input-group-sm">
+                <label class="input-group-text bg-dark text-white border-secondary">Sort By</label>
+                <select class="form-select bg-black text-white border-secondary" id="sortSelect" onchange="sortStrategies()">
+                    <option value="generation_desc">Generation (Newest)</option>
+                    <option value="roi_desc">Highest ROI</option>
+                    <option value="sharpe_desc">Highest Sharpe</option>
+                    <option value="drawdown_asc">Lowest Drawdown</option>
+                    <option value="winrate_desc">Highest Win Rate</option>
+                </select>
+            </div>
+        </div>
+        <div class="col-md-6 text-end">
+            <!-- Delete Form (Target for checkboxes) -->
+            <form action="/strategies/delete" method="post" id="deleteForm" class="d-inline">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies and their history?')">
+                    <i class="fa-solid fa-trash"></i> Delete Selected
+                </button>
+            </form>
+        </div>
     </div>
 
     <div class="accordion" id="strategyAccordion">
         {% for s in strategies %}
-        <div class="accordion-item bg-dark border-secondary mb-2">
+        {% set stat = stats_map.get(s.id) %}
+        <div class="accordion-item bg-dark border-secondary mb-2 strategy-card"
+             data-gen="{{ s.generation }}"
+             data-roi="{{ stat.roi if stat else -999 }}"
+             data-sharpe="{{ stat.sharpe if stat else -999 }}"
+             data-drawdown="{{ stat.max_drawdown if stat else 999 }}"
+             data-winrate="{{ stat.win_rate if stat else 0 }}">
             <h2 class="accordion-header" id="heading{{ s.id }}">
                 <div class="d-flex align-items-center w-100 bg-dark text-white p-2">
                     <div class="me-2">
-                        <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
+                        <!-- Linked to deleteForm via form attribute -->
+                        <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}" form="deleteForm">
                     </div>
                     <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
                         <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
-                        <span class="fw-bold me-auto">{{ s.name }}</span>
+                        <span class="fw-bold me-auto text-truncate" style="max-width: 200px;">{{ s.name }}</span>
+
+                        <!-- Stats Badges -->
+                        {% if stat %}
+                        <span class="badge bg-dark border border-secondary text-success me-1" title="ROI">
+                            <i class="fa-solid fa-arrow-trend-up"></i> {{ "%.1f"|format(stat.roi) }}%
+                        </span>
+                        <span class="badge bg-dark border border-secondary text-warning me-1" title="Sharpe">
+                            <i class="fa-solid fa-scale-balanced"></i> {{ "%.2f"|format(stat.sharpe) }}
+                        </span>
+                        <span class="badge bg-dark border border-secondary text-info me-1 d-none d-md-inline" title="Win Rate">
+                            <i class="fa-solid fa-bullseye"></i> {{ "%.0f"|format(stat.win_rate) }}%
+                        </span>
+                        {% endif %}
 
                         {% if s.is_active %}
                         <span class="badge bg-success me-2">ACTIVE</span>
                         {% endif %}
 
-                        {% if children_map[s.id] %}
-                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
+                        {% if children_map.get(s.id) %}
+                        <span class="badge bg-info rounded-pill ms-auto me-3">{{ children_map.get(s.id)|length }} Versions</span>
+                        {% else %}
+                        <span class="ms-auto"></span>
                         {% endif %}
                     </button>
                 </div>
-            </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    {% if children_map[s.id] %}
-                    <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                    {% endif %}
-                </button>
             </h2>
             <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
                 <div class="accordion-body border-top border-secondary">
@@ -96,7 +128,7 @@
                                     <button class="btn btn-sm btn-outline-danger w-100 mb-1">Deactivate</button>
                                 </form>
                                 {% endif %}
-                                <button class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
                              </div>
                         </div>
                     </div>
@@ -134,7 +166,7 @@
                                                     <button class="btn btn-outline-danger" title="Deactivate"><i class="fa-solid fa-stop"></i></button>
                                                 </form>
                                                 {% endif %}
-                                                <button class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
+                                                <button type="button" class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -149,7 +181,6 @@
         </div>
         {% endfor %}
     </div>
-    </form>
 </div>
 
 <!-- Backtest Modal (Placeholder for Step 4) -->
@@ -222,6 +253,49 @@ function openBacktestModal(id, name) {
     // Set Today
     document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
+}
+
+function sortStrategies() {
+    const sortBy = document.getElementById('sortSelect').value;
+    const container = document.getElementById('strategyAccordion');
+    const items = Array.from(container.getElementsByClassName('strategy-card'));
+
+    items.sort((a, b) => {
+        let valA, valB;
+        if (sortBy === 'generation_desc') {
+            valA = parseInt(a.dataset.gen);
+            valB = parseInt(b.dataset.gen);
+            return valB - valA;
+        } else if (sortBy === 'roi_desc') {
+            valA = parseFloat(a.dataset.roi);
+            valB = parseFloat(b.dataset.roi);
+            return valB - valA;
+        } else if (sortBy === 'sharpe_desc') {
+            valA = parseFloat(a.dataset.sharpe);
+            valB = parseFloat(b.dataset.sharpe);
+            return valB - valA;
+        } else if (sortBy === 'drawdown_asc') {
+            valA = parseFloat(a.dataset.drawdown); // Lower is better (closer to 0)
+            valB = parseFloat(b.dataset.drawdown);
+            // Drawdown is negative usually? Backtester says: max_drawdown = drawdown.min() * 100.
+            // Wait, backtester returns negative value (e.g. -25.5).
+            // So "Lowest Drawdown" means closest to 0 (highest value).
+            // E.g. -5 > -20.
+            // If backtester returns positive value (absolute DD), then lower is better.
+            // Let's check backtester.py: `max_drawdown = drawdown.min() * 100`. Result is negative (e.g. -15.0).
+            // So we want closest to 0, which is maximum value.
+            // Descending order of negative numbers: -5, -10, -20.
+            return valB - valA;
+        } else if (sortBy === 'winrate_desc') {
+            valA = parseFloat(a.dataset.winrate);
+            valB = parseFloat(b.dataset.winrate);
+            return valB - valA;
+        }
+        return 0;
+    });
+
+    // Re-append in new order
+    items.forEach(item => container.appendChild(item));
 }
 </script>
 
