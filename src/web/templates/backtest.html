@@ -140,14 +140,15 @@
                         <thead class="sticky-top bg-dark">
                             <tr>
                                 <th>Params</th>
-                                <th>PnL ($)</th>
+                                <th>Result</th>
                                 <th>ROI (%)</th>
                                 <th>Trades</th>
                                 <th>Win Rate</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="resultsBody">
-                            <tr><td colspan="5" class="text-center text-muted p-4">Run a backtest to see results.</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted p-4">Run a backtest to see results.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -182,7 +183,7 @@ async function runBacktest() {
     const formData = new FormData(form);
     const tbody = document.getElementById('resultsBody');
 
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4"><div class="spinner-border text-gold" role="status"></div><br>Running Grid Search...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center p-4"><div class="spinner-border text-gold" role="status"></div><br>Processing...</td></tr>';
 
     try {
         const response = await fetch('/run_backtest', {
@@ -195,40 +196,91 @@ async function runBacktest() {
         const results = await response.json();
 
         if (results.error) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">${results.error}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">${results.error}</td></tr>`;
             return;
         }
 
-        if (results.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4">No results found or data insufficient.</td></tr>';
+        // Check for Job ID (Async)
+        if (results.job_id) {
+            pollJob(results.job_id);
             return;
         }
 
-        let html = '';
-        results.forEach(res => {
-            const m = res.metrics;
-            const p = res.params;
-            // Format params nicely
-            let paramStr = '';
-            if(p.rsi_enabled) paramStr += `RSI<${p.rsi_lower} `;
-            if(p.macd_enabled) paramStr += `MACD `;
-
-            html += `
-            <tr>
-                <td><small>${paramStr}</small></td>
-                <td class="${m.total_pnl >= 0 ? 'text-success' : 'text-danger'} fw-bold">${m.total_pnl.toFixed(2)}</td>
-                <td class="${m.roi_percent >= 0 ? 'text-success' : 'text-danger'}">${m.roi_percent.toFixed(2)}%</td>
-                <td>${m.num_trades}</td>
-                <td>${(m.win_rate * 100).toFixed(1)}%</td>
-            </tr>
-            `;
-        });
-        tbody.innerHTML = html;
+        // Legacy / Sync Results
+        renderResults(results);
 
     } catch (e) {
         console.error(e);
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">Error: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">Error: ${e.message}</td></tr>`;
     }
+}
+
+async function pollJob(jobId) {
+    const tbody = document.getElementById('resultsBody');
+
+    while(true) {
+        try {
+            const res = await fetch(`/api/backtest/status/${jobId}`);
+            const job = await res.json();
+
+            if (job.status === 'completed') {
+                renderResults([job.result]);
+                return;
+            } else if (job.status === 'failed') {
+                 tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">Job Failed: ${job.error}</td></tr>`;
+                 return;
+            } else {
+                // Running
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center p-4">
+                    <div class="spinner-border text-gold" role="status"></div>
+                    <br>Processing... (${job.progress || 0}%)
+                </td></tr>`;
+            }
+        } catch(e) {
+             tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">Polling Error: ${e}</td></tr>`;
+             return;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+    }
+}
+
+function renderResults(results) {
+    const tbody = document.getElementById('resultsBody');
+    if (results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center p-4">No results found or data insufficient.</td></tr>';
+        return;
+    }
+
+    let html = '';
+    results.forEach(res => {
+        const m = res.metrics;
+        const p = res.params;
+        let paramStr = p.name || 'Manual Config';
+
+        // Manual params
+        if(p.rsi_enabled) paramStr += ` (RSI<${p.rsi_lower})`;
+        if(p.macd_enabled) paramStr += ` (MACD)`;
+
+        const resultLink = res.result_id ? `<a href="/backtest/result/${res.result_id}" class="btn btn-sm btn-outline-primary" target="_blank">View</a>` : '-';
+
+        // Handle PnL - try to find field
+        let pnl = m.total_pnl || (m.roi_percent * 100); // Dummy fallback if pnl missing
+        // Wait, manual returns total_pnl? legacy manual `metrics` has `total_pnl`?
+        // Vectorized returns `roi_percent`.
+        // Let's normalize display
+
+        html += `
+        <tr>
+            <td><small>${paramStr}</small></td>
+            <td>-</td>
+            <td class="${m.roi_percent >= 0 ? 'text-success' : 'text-danger'}">${m.roi_percent.toFixed(2)}%</td>
+            <td>${m.total_trades || m.num_trades || 0}</td>
+            <td>${((m.win_rate || 0)).toFixed(1)}%</td>
+            <td>${resultLink}</td>
+        </tr>
+        `;
+    });
+    tbody.innerHTML = html;
 }
 </script>
 {% endblock %}

@@ -22,6 +22,7 @@
                 {% endif %}
 
                 <form method="post">
+                    <!-- API Keys -->
                     <h5 class="text-gold mb-3">Bybit API</h5>
                     <div class="form-floating mb-3">
                         <input type="text" name="api_key" class="form-control" id="apiKey" value="{{ settings.api_key if settings else '' }}" placeholder="API Key">
@@ -42,7 +43,8 @@
                         <label for="geminiKey">Google Gemini API Key</label>
                     </div>
 
-                    <h5 class="text-gold mb-3">Automation</h5>
+                    <!-- Automation / Evolution -->
+                    <h5 class="text-gold mb-3">Automation & Backtesting</h5>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" name="auto_evolve" id="autoEvolve" value="true" {% if settings and settings.auto_evolve %}checked{% endif %}>
                         <label class="form-check-label" for="autoEvolve">Enable Continuous Evolution</label>
@@ -52,6 +54,12 @@
                     <div class="form-floating mb-3">
                         <input type="number" name="evolution_interval" class="form-control bg-dark text-white border-secondary" id="evoInterval" value="{{ settings.evolution_interval if settings else 30 }}" min="5">
                         <label for="evoInterval">Evolution Interval (Minutes)</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Backtest Universe (Comma Separated)</label>
+                        <input type="text" name="backtest_pairs" class="form-control bg-dark text-white border-secondary" value="{{ settings.backtest_pairs if settings.backtest_pairs else 'BTCUSDT' }}" placeholder="BTCUSDT, ETHUSDT, SOLUSDT...">
+                        <div class="form-text text-muted">Strategies will be evaluated against these pairs during evolution.</div>
                     </div>
 
                     <label class="form-label mt-2">Evolution Lookback Period</label>

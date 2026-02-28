@@ -31,8 +31,27 @@
     <h3>Strategy Library</h3>
     <p class="text-muted small">Strategies are grouped by lineage. Click to expand.</p>
 
+    <!-- Sorting Toolbar -->
+    <div class="d-flex justify-content-end mb-2">
+        <div class="d-flex align-items-center">
+            <span class="text-muted me-2 small"><i class="fa-solid fa-arrow-down-wide-short"></i> Sort:</span>
+            <select class="form-select form-select-sm bg-dark text-white border-secondary shadow-none" id="strategySort" style="width: auto; cursor: pointer;">
+                <option value="roi_desc" selected>Best ROI</option>
+                <option value="drawdown_desc">Safe (Low DD)</option> <!-- High numeric value (closest to 0) -->
+                <option value="gen_desc">Newest Gen</option>
+                <option value="name_asc">Name (A-Z)</option>
+            </select>
+        </div>
+    </div>
+
     <form action="/strategies/delete" method="post" id="deleteForm">
-    <div class="mb-3 text-end">
+    <div class="mb-3 d-flex justify-content-between align-items-center">
+        <!-- Select All Toggle -->
+        <div class="form-check ms-2">
+            <input class="form-check-input bg-dark border-secondary" type="checkbox" id="selectAllStrategies">
+            <label class="form-check-label text-muted small" for="selectAllStrategies">Select All</label>
+        </div>
+
         <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected strategies?')">
             <i class="fa-solid fa-trash"></i> Delete Selected
         </button>
@@ -40,34 +59,45 @@
 
     <div class="accordion" id="strategyAccordion">
         {% for s in strategies %}
-        <div class="accordion-item bg-dark border-secondary mb-2">
+        <div class="accordion-item bg-dark border-secondary mb-2"
+             data-name="{{ s.name }}"
+             data-gen="{{ s.generation }}"
+             data-roi="{{ s.best_result.roi if s.best_result else -9999 }}"
+             data-dd="{{ s.best_result.max_drawdown if s.best_result else -100 }}">
             <h2 class="accordion-header" id="heading{{ s.id }}">
                 <div class="d-flex align-items-center w-100 bg-dark text-white p-2">
                     <div class="me-2">
                         <input class="form-check-input bg-dark border-secondary" type="checkbox" name="strategy_ids" value="{{ s.id }}">
                     </div>
-                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
+                    <!-- Make button only trigger collapse if children exist or we want details -->
+                    <button class="accordion-button collapsed bg-dark text-white shadow-none p-0 {% if not children_map[s.id] %}no-arrow{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ s.id }}">
                         <span class="badge bg-secondary me-2 ms-2">Gen {{ s.generation }}</span>
-                        <span class="fw-bold me-auto">{{ s.name }}</span>
+                        <span class="fw-bold me-auto text-truncate" style="max-width: 300px;">{{ s.name }}</span>
+
+                        <!-- Performance Badges -->
+                        {% if s.best_result and s.best_result.trades_count > 0 %}
+                            <span class="badge bg-dark border border-success text-success me-2 font-monospace" title="ROI">
+                                <i class="fa-solid fa-chart-line"></i> {{ "%.1f"|format(s.best_result.roi) }}%
+                            </span>
+                            <span class="badge bg-dark border border-danger text-danger me-2 font-monospace" title="Max Drawdown">
+                                <i class="fa-solid fa-caret-down"></i> {{ "%.1f"|format(s.best_result.max_drawdown) }}%
+                            </span>
+                            <span class="badge bg-dark border border-info text-info me-2 font-monospace" title="Sharpe Ratio">
+                                <i class="fa-solid fa-scale-balanced"></i> {{ "%.2f"|format(s.best_result.sharpe) }}
+                            </span>
+                        {% endif %}
 
                         {% if s.is_active %}
                         <span class="badge bg-success me-2">ACTIVE</span>
                         {% endif %}
 
                         {% if children_map[s.id] %}
-                        <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
+                        <span class="badge bg-info rounded-pill me-2">{{ children_map[s.id]|length }} Versions</span>
                         {% endif %}
                     </button>
                 </div>
             </h2>
-            <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
-                <div class="accordion-body border-top border-secondary">
-
-                    {% if children_map[s.id] %}
-                    <span class="badge bg-info rounded-pill">{{ children_map[s.id]|length }} Versions</span>
-                    {% endif %}
-                </button>
-            </h2>
+            <!-- Force expand if active or no children? No, keep standard accordion behavior -->
             <div id="collapse{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#strategyAccordion">
                 <div class="accordion-body border-top border-secondary">
 
@@ -96,7 +126,7 @@
                                     <button class="btn btn-sm btn-outline-danger w-100 mb-1">Deactivate</button>
                                 </form>
                                 {% endif %}
-                                <button class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning mb-1" onclick="openBacktestModal('{{ s.id }}', '{{ s.name }}')">Run Backtest</button>
                              </div>
                         </div>
                     </div>
@@ -134,7 +164,7 @@
                                                     <button class="btn btn-outline-danger" title="Deactivate"><i class="fa-solid fa-stop"></i></button>
                                                 </form>
                                                 {% endif %}
-                                                <button class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
+                                                <button type="button" class="btn btn-outline-warning" onclick="openBacktestModal('{{ child.id }}', '{{ child.name }}')" title="Backtest"><i class="fa-solid fa-play"></i></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -161,7 +191,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <form id="backtestForm" action="/run_backtest" method="post" target="_blank"> <!-- Open in new tab? or redirect -->
+        <form id="backtestForm" action="/run_backtest" method="post">
              <input type="hidden" name="strategy_mode" value="ai">
              <input type="hidden" name="strategy_id" id="modalStratId">
 
@@ -215,6 +245,13 @@
   </div>
 </div>
 
+<style>
+    /* Hide accordion arrow if no children/versions */
+    .accordion-button.no-arrow::after {
+        display: none;
+    }
+</style>
+
 <script>
 function openBacktestModal(id, name) {
     document.getElementById('modalStratId').value = id;
@@ -223,6 +260,115 @@ function openBacktestModal(id, name) {
     document.getElementById('modalEndDate').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('backtestModal')).show();
 }
+
+// Intercept Modal Form Submit to handle Async with Polling
+document.getElementById('backtestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('button[type="submit"]');
+    const originalText = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = "Processing...";
+
+    const formData = new FormData(this);
+
+    try {
+        const res = await fetch(this.action, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+        const data = await res.json();
+
+        if (data.job_id) {
+            btn.innerText = "Running Simulation...";
+            showToast(`Backtest started... (ID: ${data.job_id.substring(0,6)})`);
+
+            // Poll for completion
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`/api/backtest/status/${data.job_id}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        btn.innerText = "Complete! Redirecting...";
+                        window.location.href = `/backtest/result/${statusData.result.result_id}`;
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollInterval);
+                        alert("Backtest Failed: " + statusData.error);
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    } else {
+                        // Still running
+                        btn.innerText = `Running... ${statusData.progress || 0}%`;
+                    }
+                } catch(err) {
+                    console.error("Polling error", err);
+                }
+            }, 1000); // Check every second
+
+        } else if (data.error) {
+            alert("Error: " + data.error);
+            btn.disabled = false;
+            btn.innerText = originalText;
+        } else {
+            // Manual sync result fallback
+            alert("Sync result received. Check results page.");
+            window.location.href = "/evolution";
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Request Failed: " + e.message);
+        btn.disabled = false;
+        btn.innerText = originalText;
+    }
+});
+
+// Select All Logic
+document.getElementById('selectAllStrategies').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('input[name="strategy_ids"]');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+});
+
+// Strategy Sorting Logic
+document.getElementById('strategySort').addEventListener('change', function() {
+    const container = document.getElementById('strategyAccordion');
+    const items = Array.from(container.children);
+    const criteria = this.value;
+
+    items.sort((a, b) => {
+        let valA, valB;
+
+        switch(criteria) {
+            case 'roi_desc':
+                valA = parseFloat(a.dataset.roi);
+                valB = parseFloat(b.dataset.roi);
+                return valB - valA;
+            case 'drawdown_desc':
+                // Drawdown is usually negative e.g. -20. We want -5 to be "better" (higher) than -50
+                valA = parseFloat(a.dataset.dd);
+                valB = parseFloat(b.dataset.dd);
+                return valB - valA; // Sort Descending (-5 > -50)
+            case 'gen_desc':
+                valA = parseInt(a.dataset.gen);
+                valB = parseInt(b.dataset.gen);
+                return valB - valA;
+            case 'name_asc':
+                valA = a.dataset.name.toLowerCase();
+                valB = b.dataset.name.toLowerCase();
+                if (valA < valB) return -1;
+                if (valA > valB) return 1;
+                return 0;
+            default:
+                return 0;
+        }
+    });
+
+    // Re-append in new order
+    items.forEach(item => container.appendChild(item));
+});
 </script>
 
 {% endblock %}

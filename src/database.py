@@ -18,6 +18,10 @@ class Settings(Base):
     evolution_lookback_value = Column(Integer, default=3)
     evolution_lookback_unit = Column(String, default="Months")
     evolution_interval = Column(Integer, default=30) # Minutes
+    backtest_pairs = Column(String, default="BTCUSDT") # Comma separated
+    max_ai_requests_per_hour = Column(Integer, default=10)
+    auto_optimize = Column(Boolean, default=False)
+    max_concurrent_backtests = Column(Integer, default=2)
 
 class User(Base):
     __tablename__ = 'users'
@@ -44,6 +48,7 @@ class Strategy(Base):
     generation = Column(Integer, default=0)
     parent_id = Column(Integer, nullable=True) # ID of parent strategy
     is_active = Column(Boolean, default=False)
+    archived = Column(Boolean, default=False)
     created_at = Column(Float)
 
 class BacktestResult(Base):
@@ -167,6 +172,40 @@ def init_db():
              with engine.connect() as conn:
                 try:
                     conn.execute(text("ALTER TABLE settings ADD COLUMN evolution_interval INTEGER DEFAULT 30"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+        # Check for backtest_pairs
+        if "backtest_pairs" not in columns:
+             print("Migrating settings table: adding backtest_pairs...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN backtest_pairs VARCHAR DEFAULT 'BTCUSDT'"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+        # Check for auto_optimize and limits
+        if "max_ai_requests_per_hour" not in columns:
+             print("Migrating settings table: adding automation limits...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN max_ai_requests_per_hour INTEGER DEFAULT 10"))
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN auto_optimize BOOLEAN DEFAULT 0"))
+                    conn.execute(text("ALTER TABLE settings ADD COLUMN max_concurrent_backtests INTEGER DEFAULT 2"))
+                    conn.commit()
+                except Exception as e:
+                     print(f"Migration Error: {e}")
+
+    # Check strategy archive
+    if inspector.has_table("strategies"):
+        columns = [c['name'] for c in inspector.get_columns("strategies")]
+        if "archived" not in columns:
+             print("Migrating strategies table: adding archived...")
+             with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE strategies ADD COLUMN archived BOOLEAN DEFAULT 0"))
                     conn.commit()
                 except Exception as e:
                      print(f"Migration Error: {e}")

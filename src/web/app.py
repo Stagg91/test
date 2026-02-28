@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, Depends, Response, Cookie, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Form, Depends, Response, Cookie, WebSocket, WebSocketDisconnect, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from src.logger import LabLogger
@@ -8,6 +8,7 @@ import pandas as pd
 import json
 import numpy as np
 import time
+import psutil
 
 from src.database import SessionLocal, engine, Settings, init_db, User, Strategy, BacktestResult
 from src.bybit_client import BybitClient
@@ -26,6 +27,7 @@ from src.ai_sentiment import AISentimentAgent
 from src.auth import verify_password, get_password_hash, create_access_token, decode_token, create_magic_token
 from src.notifications import NotificationManager
 from src.utils import get_resource_path
+from src.jobs import JobManager
 import qrcode
 import io
 import base64
@@ -42,6 +44,7 @@ app = FastAPI()
 async def startup_event():
     import asyncio
     LabLogger.set_loop(asyncio.get_running_loop())
+    # Start cleanup task or something?
 
 # Mount static files
 static_path = get_resource_path("src/web/static")
@@ -91,8 +94,6 @@ async def auth_middleware(request: Request, call_next):
     # LOG REQUEST
     try:
         if not request.url.path.startswith("/static") and not request.url.path.startswith("/ws"):
-             # We need to await body carefully if we want to log it, but it consumes the stream.
-             # Safe approach: Log method and path.
              await LabLogger.log("API", f"INCOMING: {request.method} {request.url.path}", {"params": dict(request.query_params)})
     except:
         pass
@@ -227,14 +228,21 @@ async def get_symbols(db: Session = Depends(get_db)):
     testnet = settings.testnet if settings else True
 
     client = BybitClient(api_key=key, api_secret=secret, testnet=testnet)
-    resp = client.get_instruments()
+    try:
+        resp = client.get_instruments()
+        if resp and 'result' in resp and 'list' in resp['result']:
+            # Filter USDT and Trading status
+            symbols = [
+                item['symbol']
+                for item in resp['result']['list']
+                if item['status'] == 'Trading' and item['symbol'].endswith('USDT')
+            ]
+            symbols.sort()
+            return symbols
+    except Exception as e:
+        await LabLogger.log("API", f"Error fetching symbols: {e}")
 
-    if resp and 'result' in resp and 'list' in resp['result']:
-        # Extract symbol names
-        symbols = [item['symbol'] for item in resp['result']['list'] if item['status'] == 'Trading']
-        symbols.sort()
-        return symbols
-    return ["BTCUSDT", "ETHUSDT", "SOLUSDT"] # Fallback
+    return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"] # Extended Fallback
 
 @app.get("/api/market_watch")
 async def get_market_watch(db: Session = Depends(get_db)):
@@ -260,8 +268,6 @@ async def get_market_watch(db: Session = Depends(get_db)):
             except:
                 continue
 
-    # Sort by volume or symbol? Let's sort by symbol for now, or maybe most volatile?
-    # Let's return all, frontend handles display limit
     return data
 
 @app.get("/api/chart_data")
@@ -279,6 +285,14 @@ async def get_chart_data(symbol: str = "BTCUSDT"):
     # Convert to JSON friendly format
     records = df.to_dict(orient="records")
     return records
+
+@app.get("/api/resources")
+async def get_resources():
+    return {
+        "cpu_percent": psutil.cpu_percent(),
+        "memory_percent": psutil.virtual_memory().percent,
+        "memory_gb": psutil.virtual_memory().used / (1024 * 1024 * 1024)
+    }
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
@@ -299,6 +313,9 @@ async def save_settings(
     evolution_lookback_value: int = Form(3),
     evolution_lookback_unit: str = Form("Months"),
     evolution_interval: int = Form(30),
+    backtest_pairs: str = Form(""), # New
+    max_ai_requests_per_hour: int = Form(10), # New
+    auto_optimize: bool = Form(False), # New
     db: Session = Depends(get_db)
 ):
     settings = db.query(Settings).first()
@@ -317,6 +334,9 @@ async def save_settings(
     settings.evolution_lookback_value = evolution_lookback_value
     settings.evolution_lookback_unit = evolution_lookback_unit
     settings.evolution_interval = evolution_interval
+    settings.backtest_pairs = backtest_pairs
+    settings.max_ai_requests_per_hour = max_ai_requests_per_hour
+    settings.auto_optimize = auto_optimize
     db.commit()
 
     return templates.TemplateResponse("settings.html", {"request": request, "settings": settings, "message": "Saved!"})
@@ -338,15 +358,133 @@ async def ai_backtest_config(request: Request, prompt: str = Form(...), db: Sess
 
     return templates.TemplateResponse("backtest.html", {"request": request, "config": config})
 
+async def execute_backtest_job(job_id, symbol, interval, start_time, end_time, initial_balance, strategy_id):
+    JobManager.update_job(job_id, status="running", progress=0)
+    await LabLogger.log("BACKTEST", f"Job {job_id} started for {symbol}")
+
+    db = SessionLocal()
+    try:
+        de = DataEngine()
+
+        # Parse Dates
+        ts_start = None
+        ts_end = None
+        if start_time:
+            try:
+                ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
+            except: pass
+        if end_time:
+            try:
+                ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+            except: pass
+
+        limit = 100000 if (start_time or end_time) else 1000
+
+        # Buffer Logic
+        if ts_start:
+            ms_per_candle = 3600000
+            if str(interval) == "1": ms_per_candle = 60000
+            elif str(interval) == "5": ms_per_candle = 300000
+            elif str(interval) == "15": ms_per_candle = 900000
+            elif str(interval) == "240": ms_per_candle = 14400000
+            elif str(interval).upper() == "D": ms_per_candle = 86400000
+            ts_start = ts_start - (200 * ms_per_candle)
+
+        JobManager.update_job(job_id, progress=10) # Fetching Data
+
+        df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start, end_time=ts_end)
+
+        if df.empty or len(df) < 50:
+            JobManager.update_job(job_id, status="failed", error="Insufficient data")
+            return
+
+        JobManager.update_job(job_id, progress=40) # Running Strategy
+
+        bt = Backtester(df, initial_balance=initial_balance)
+        strat = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+
+        if not strat:
+             JobManager.update_job(job_id, status="failed", error="Strategy not found")
+             return
+
+        res = {}
+        if strat.content_json:
+             recipe = StrategyRecipe(**strat.content_json)
+             res = bt.run_vectorized_backtest(recipe)
+        else:
+             # Legacy
+             JobManager.update_job(job_id, status="failed", error="Legacy strategies not supported in async mode yet")
+             return
+
+        JobManager.update_job(job_id, progress=90) # Saving
+
+        # Helper to sanitize
+        def sanitize(obj):
+             if isinstance(obj, (np.integer, np.int64)):
+                 return int(obj)
+             if isinstance(obj, (np.floating, np.float64, float)):
+                 if np.isnan(obj) or np.isinf(obj):
+                     return 0.0
+                 return float(obj)
+             if isinstance(obj, dict):
+                 return {k: sanitize(v) for k, v in obj.items()}
+             if isinstance(obj, list):
+                 return [sanitize(v) for v in obj]
+             return obj
+
+        res = sanitize(res)
+
+        # Save to DB
+        br = BacktestResult(
+            strategy_id=strat.id,
+            symbol=symbol,
+            start_date=str(df.iloc[0]['startTime']),
+            end_date=str(df.iloc[-1]['startTime']),
+            roi=res.get('roi_percent', 0),
+            sharpe=res.get('sharpe', 0),
+            max_drawdown=res.get('max_drawdown', 0),
+            win_rate=res.get('win_rate', 0),
+            trades_count=res.get('total_trades', 0),
+            metrics_json=json.dumps(res),
+            timestamp=time.time()
+        )
+        db.add(br)
+        db.commit()
+
+        JobManager.update_job(job_id, status="completed", result={
+            "metrics": res,
+            "params": {"name": strat.name},
+            "result_id": br.id
+        })
+        await LabLogger.log("BACKTEST", f"Job {job_id} completed.")
+
+        # --- Continuous Optimization Hook ---
+        try:
+            settings = db.query(Settings).first()
+            if settings and settings.auto_optimize:
+                await LabLogger.log("OPTIMIZER", f"Auto-Optimize enabled. Checking strategy {strat.id}...")
+                breeder = GeneticBreeder(gemini_api_key=settings.gemini_api_key)
+                await breeder.optimize_strategy(br.id)
+        except Exception as e:
+            await LabLogger.log("ERROR", f"Auto-Optimize Trigger Failed: {e}")
+
+    except Exception as e:
+        traceback.print_exc()
+        JobManager.update_job(job_id, status="failed", error=str(e))
+    finally:
+        db.close()
+
+
 @app.post("/run_backtest")
 async def run_backtest(
     request: Request,
+    background_tasks: BackgroundTasks,
     symbol: str = Form(...),
     initial_balance: float = Form(10000.0),
-    start_time: str = Form(None), # Optional YYYY-MM-DD
+    start_time: str = Form(None),
     end_time: str = Form(None),
     interval: str = Form("60"),
-    strategy_mode: str = Form("manual"), # manual or ai
+    strategy_mode: str = Form("manual"),
     strategy_id: int = Form(None),
     rsi_enabled: bool = Form(False),
     rsi_lower_start: int = Form(20),
@@ -355,185 +493,89 @@ async def run_backtest(
     macd_enabled: bool = Form(False),
     db: Session = Depends(get_db)
 ):
-    await LabLogger.log("BACKTEST", f"Starting Backtest on {symbol} ({interval})", {
-        "balance": initial_balance, "mode": strategy_mode, "strat_id": strategy_id
-    })
+    # Async Mode for AI Strategy
+    if strategy_mode == "ai" and strategy_id:
+        job_id = JobManager.create_job("backtest")
+        background_tasks.add_task(
+            execute_backtest_job,
+            job_id, symbol, interval, start_time, end_time, initial_balance, strategy_id
+        )
+        return {"job_id": job_id, "status": "queued"}
+
+    # Legacy Manual/Grid Search (Sync)
+    await LabLogger.log("BACKTEST", f"Starting Manual Backtest on {symbol}")
 
     de = DataEngine()
-    # Convert dates to timestamp ms if provided
+
     ts_start = None
-    ts_end = None
     if start_time:
-        try:
-            ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
-        except: pass
-    if end_time:
-        try:
-            ts_end = int(pd.Timestamp(end_time).timestamp() * 1000)
+        try: ts_start = int(pd.Timestamp(start_time).timestamp() * 1000)
         except: pass
 
-    # Increase limit if dates provided, or default 1000
-    limit = 100000 if (start_time or end_time) else 1000
+    limit = 10000 if start_time else 1000
+    df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start)
 
-    # --- Data Buffer Logic ---
-    # If start_time is provided, shift it back by X candles to allow indicators (EMA, RSI, ADX) to warm up.
-    # Otherwise, they will be NaN at the start, potentially crashing logic or producing 0 trades.
-    real_start_time = ts_start
-    if ts_start:
-        # Approximate ms per candle.
-        # Interval map: 60 -> 1h, D -> 1 day, etc.
-        ms_per_candle = 3600000 # Default 1h
-        if str(interval) == "1": ms_per_candle = 60000
-        elif str(interval) == "5": ms_per_candle = 300000
-        elif str(interval) == "15": ms_per_candle = 900000
-        elif str(interval) == "240": ms_per_candle = 14400000
-        elif str(interval).upper() == "D": ms_per_candle = 86400000
+    if df.empty: return {"error": "No data"}
 
-        # Buffer of 200 candles
-        buffer_ms = 200 * ms_per_candle
-        ts_start = ts_start - buffer_ms
-
-    df = de.fetch_ohlcv(symbol, interval=interval, limit=limit, start_time=ts_start, end_time=ts_end)
-
-    if df.empty:
-        await LabLogger.log("BACKTEST", "Error: No data found for specified range.")
-        return {"error": "No data found"}
-
-    if len(df) < 50:
-        await LabLogger.log("BACKTEST", f"Error: Insufficient data loaded ({len(df)} candles).")
-        return {"error": "Insufficient data (need > 50 candles)"}
-
-    await LabLogger.log("BACKTEST", f"Data Loaded: {len(df)} candles (inc. buffer).")
     bt = Backtester(df, initial_balance=initial_balance)
-
-    if strategy_mode == "ai" and strategy_id:
-        # Run AI Strategy
-        strat = db.query(Strategy).filter(Strategy.id == strategy_id).first()
-        if not strat:
-            return {"error": "Strategy not found"}
-
-        try:
-            # Check if JSON Strategy
-            if strat.content_json:
-                 recipe = StrategyRecipe(**strat.content_json)
-                 res = bt.run_vectorized_backtest(recipe)
-
-                 # Save Result
-                 br = BacktestResult(
-                    strategy_id=strat.id,
-                    symbol=symbol,
-                    start_date=str(df.iloc[0]['startTime']),
-                    end_date=str(df.iloc[-1]['startTime']),
-                    roi=res['roi_percent'],
-                    sharpe=res['sharpe'],
-                    max_drawdown=res['max_drawdown'],
-                    win_rate=res['win_rate'],
-                    trades_count=res['total_trades'],
-                    metrics_json=json.dumps(res),
-                    timestamp=time.time()
-                 )
-                 db.add(br)
-                 db.commit()
-
-                 # Redirect if HTML requested (Form Submit)
-                 if "text/html" in request.headers.get("accept", ""):
-                     return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
-
-                 # Else return JSON (Legacy/Fetch)
-                 # We still generate chart JSON for legacy consumers?
-                 # ... (Omitted chart gen for speed if just JSON)
-
-                 # Helper to replace NaN
-                 def sanitize(obj):
-                     if isinstance(obj, float):
-                         if np.isnan(obj) or np.isinf(obj):
-                             return 0.0
-                     if isinstance(obj, dict):
-                         return {k: sanitize(v) for k, v in obj.items()}
-                     if isinstance(obj, list):
-                         return [sanitize(v) for v in obj]
-                     return obj
-
-                 res = sanitize(res)
-                 return [{
-                    "params": {"name": strat.name},
-                    "metrics": res,
-                    "result_id": br.id # Return ID so frontend can link if needed
-                }]
-
-            else:
-                # Legacy Code Exec
-                local_scope = {}
-                exec(strat.code, {}, local_scope)
-                StrategyClass = local_scope.get(strat.class_name)
-                if not StrategyClass:
-                    return {"error": f"Class {strat.class_name} not found in code"}
-
-                instance = StrategyClass()
-                res = bt.run_strategy_instance(instance)
-
-                # Save Result
-                # Walk forward result structure is different
-                test_res = res.get('test', res)
-
-                br = BacktestResult(
-                    strategy_id=strat.id,
-                    symbol=symbol,
-                    start_date=str(df.iloc[0]['startTime']),
-                    end_date=str(df.iloc[-1]['startTime']),
-                    roi=test_res['roi_percent'],
-                    sharpe=test_res['sharpe'],
-                    max_drawdown=test_res['max_drawdown'],
-                    win_rate=test_res['win_rate'] * 100,
-                    trades_count=test_res['total_trades'],
-                    metrics_json=json.dumps(res),
-                    timestamp=time.time()
-                )
-                db.add(br)
-                db.commit()
-
-                if "text/html" in request.headers.get("accept", ""):
-                     return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
-
-                return [{
-                    "params": {"name": strat.name},
-                    "metrics": test_res
-                }]
-        except Exception as e:
-            traceback.print_exc()
-            return {"error": f"Strategy Execution Error: {e}"}
-
+    param_grid = {}
+    if rsi_enabled:
+        param_grid['rsi_enabled'] = [True]
+        param_grid['rsi_lower'] = list(range(rsi_lower_start, rsi_lower_stop, rsi_lower_step))
     else:
-        # Manual Mode (Grid Search)
-        param_grid = {}
+        param_grid['rsi_enabled'] = [False]
 
-        if rsi_enabled:
-            param_grid['rsi_enabled'] = [True]
-            param_grid['rsi_lower'] = list(range(rsi_lower_start, rsi_lower_stop, rsi_lower_step))
-        else:
-            param_grid['rsi_enabled'] = [False]
+    if macd_enabled:
+        param_grid['macd_enabled'] = [True]
+    else:
+        param_grid['macd_enabled'] = [False]
 
-        if macd_enabled:
-            param_grid['macd_enabled'] = [True]
-        else:
-            param_grid['macd_enabled'] = [False]
+    results = bt.grid_search(combined_strategy, param_grid)
+    return results[0:10]
 
-        # Run Grid Search
-        results = bt.grid_search(combined_strategy, param_grid)
-
-        return results[0:10]
+@app.get("/api/backtest/status/{job_id}")
+async def get_job_status(job_id: str):
+    job = JobManager.get_job(job_id)
+    if not job:
+        return JSONResponse({"error": "Job not found"}, status_code=404)
+    return job
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, db: Session = Depends(get_db)):
-    all_strats = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
+    # Filter archived
+    all_strats = db.query(Strategy).filter(Strategy.archived == False).all()
+
+    # Fetch all backtest results to find the "Best" one for each strategy
+    all_results = db.query(BacktestResult).all()
+
+    # Map strategy_id -> Best BacktestResult object
+    best_results_map = {}
+
+    for res in all_results:
+        sid = res.strategy_id
+        if sid not in best_results_map:
+            best_results_map[sid] = res
+        else:
+            current_best = best_results_map[sid]
+            # Logic: Prefer trades > 0. Then prefer higher ROI.
+            if current_best.trades_count == 0 and res.trades_count > 0:
+                best_results_map[sid] = res
+            elif current_best.trades_count > 0 and res.trades_count > 0:
+                if res.roi > current_best.roi:
+                    best_results_map[sid] = res
+            elif current_best.trades_count == 0 and res.trades_count == 0:
+                # If both 0 trades, maybe taking newest? or highest ROI (even if 0)?
+                if res.roi > current_best.roi:
+                    best_results_map[sid] = res
+
+    # Attach best result to strategy objects (Python dynamic attribute)
+    for s in all_strats:
+        s.best_result = best_results_map.get(s.id)
 
     # Organize into trees
-    # Map ID -> Strategy
     strat_map = {s.id: s for s in all_strats}
-
-    # Identify Roots (No parent or parent not in current set)
     roots = []
-    children_map = {} # ParentID -> List of Children
+    children_map = {}
 
     for s in all_strats:
         if s.parent_id and s.parent_id in strat_map:
@@ -543,8 +585,17 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
         else:
             roots.append(s)
 
-    # Sort roots by generation desc
-    roots.sort(key=lambda x: x.generation, reverse=True)
+    # Default Sort for initial render: Best ROI Descending
+    def sort_key(s):
+        if s.best_result:
+            return (s.best_result.trades_count > 0, s.best_result.roi)
+        return (False, -9999)
+
+    roots.sort(key=sort_key, reverse=True)
+
+    # Sort children by Generation (newest first) usually makes sense
+    for pid in children_map:
+        children_map[pid].sort(key=lambda x: x.generation, reverse=True)
 
     return templates.TemplateResponse("strategies.html", {
         "request": request,
@@ -556,14 +607,7 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
 async def delete_strategies(strategy_ids: List[int] = Form(...), db: Session = Depends(get_db)):
     if not strategy_ids:
         return RedirectResponse("/strategies", status_code=303)
-
-    # Delete strategies
     db.query(Strategy).filter(Strategy.id.in_(strategy_ids)).delete(synchronize_session=False)
-
-    # Also delete children? Or just let them be orphaned (roots)?
-    # If we delete a parent, children will have parent_id pointing to non-existent ID.
-    # In 'strategies_page' logic, they will become roots. That's fine.
-
     db.commit()
     return RedirectResponse("/strategies", status_code=303)
 
@@ -577,19 +621,14 @@ async def generate_strategies(
     await LabLogger.log("AI", f"Requesting Generation: {prompt}", {"count": count})
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
-
     breeder = GeneticBreeder(gemini_api_key=key)
     new_strats = await breeder.create_generation_zero(prompt=prompt, count=count)
-
     await LabLogger.log("API", f"Generated {len(new_strats)} strategies.")
-
     return RedirectResponse("/strategies", status_code=303)
 
 @app.post("/strategies/activate/{strat_id}")
 async def activate_strategy(strat_id: int, db: Session = Depends(get_db)):
-    # Deactivate all
     db.query(Strategy).update({Strategy.is_active: False})
-    # Activate target
     strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
     if strat:
         strat.is_active = True
@@ -606,13 +645,8 @@ async def deactivate_strategy(strat_id: int, db: Session = Depends(get_db)):
 
 @app.get("/evolution", response_class=HTMLResponse)
 async def evolution_page(request: Request, db: Session = Depends(get_db)):
-    # Get Generation Stats
     results = db.query(BacktestResult).all()
-    # Group by strategy generation? Need to join
-    data = []
-    # Simplified view: List all backtest results joined with strategy info
     rows = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).order_by(BacktestResult.roi.desc()).limit(50).all()
-
     return templates.TemplateResponse("evolution.html", {"request": request, "results": rows})
 
 @app.post("/evolution/run_generation")
@@ -620,13 +654,8 @@ async def run_generation(request: Request, generation: int = Form(0), db: Sessio
     settings = db.query(Settings).first()
     key = settings.gemini_api_key if settings else None
     breeder = GeneticBreeder(gemini_api_key=key)
-
-    # 1. Evaluate current gen
     breeder.evaluate_population(generation=generation)
-
-    # 2. Breed next gen
     breeder.breed_next_generation(current_gen=generation)
-
     return RedirectResponse("/evolution", status_code=303)
 
 @app.get("/backtest/result/{result_id}", response_class=HTMLResponse)
@@ -639,7 +668,6 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
     chart_json = None
     try:
         metrics = json.loads(res.metrics_json)
-        # Handle if metrics are nested under 'test' (walk-forward) or flat (legacy/run_strategy_instance)
         if 'test' in metrics:
             details = metrics['test']
         else:
@@ -648,34 +676,21 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         trades = details.get('trades', [])
         equity_curve = details.get('equity_curve', [])
 
-        # Generate Chart if Strategy is JSON type
         strat = db.query(Strategy).filter(Strategy.id == res.strategy_id).first()
         if strat and strat.content_json:
-             # Need to re-run to get signals for chart?
-             # Or we could have stored chart_json in metrics? Storing full chart is heavy.
-             # Better to re-run on demand if data matches?
-             # But fetching data exactly as backtest is tricky if date range not saved precisely in DB
-             # DB has start/end date string.
-
-             # Re-fetch data
              de = DataEngine()
              ts_start = int(pd.Timestamp(res.start_date).timestamp() * 1000)
              ts_end = int(pd.Timestamp(res.end_date).timestamp() * 1000)
-
-             # Fetch a bit more context? Or exact.
              df = de.fetch_ohlcv(res.symbol, interval="60", start_time=ts_start, end_time=ts_end)
-
              if not df.empty:
                  from src.strategy_parser import StrategyParser
                  parser = StrategyParser()
                  recipe = StrategyRecipe(**strat.content_json)
                  df_res = parser.parse_and_execute(df, recipe)
-
                  chart_json = ChartGenerator.generate_chart_json(
                      df_res,
                      indicators=[ind.col_name or ind.name for ind in recipe.indicators]
                  )
-
     except Exception as e:
         print(f"Error loading result details: {e}")
         trades = []
@@ -686,30 +701,23 @@ async def backtest_result_page(request: Request, result_id: int, db: Session = D
         "result": res,
         "trades": trades,
         "equity_curve": equity_curve,
-        "chart_json": chart_json # Pass to template
+        "chart_json": chart_json
     })
 
 @app.post("/strategies/backtest/{strat_id}")
 async def backtest_strategy_route(request: Request, strat_id: int, db: Session = Depends(get_db)):
-    # Run a quick backtest for this strategy
     strat = db.query(Strategy).filter(Strategy.id == strat_id).first()
     if not strat:
         return RedirectResponse("/strategies", status_code=303)
-
-    # Execute similar logic to GeneticBreeder but for single strat
     from src.data_engine import DataEngine
     de = DataEngine()
     df = de.fetch_ohlcv("BTCUSDT", interval="60", limit=1000)
-
     try:
-        # Check type
         if strat.content_json:
              recipe = StrategyRecipe(**strat.content_json)
              from src.backtester import Backtester
              bt = Backtester(df, initial_balance=10000)
              res = bt.run_vectorized_backtest(recipe)
-
-             # Save result
              br = BacktestResult(
                 strategy_id=strat.id,
                 symbol="BTCUSDT",
@@ -726,80 +734,38 @@ async def backtest_strategy_route(request: Request, strat_id: int, db: Session =
              db.add(br)
              db.commit()
              return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
-
         else:
-            # Legacy
-            local_scope = {}
-            exec(strat.code, {}, local_scope)
-            StrategyClass = local_scope.get(strat.class_name)
-            if not StrategyClass:
-                return RedirectResponse("/strategies", status_code=303)
-
-            instance = StrategyClass()
-            from src.backtester import Backtester
-            bt = Backtester(df, initial_balance=10000)
-            res = bt.walk_forward_validation(instance)
-            test_res = res['test']
-            br = BacktestResult(
-                strategy_id=strat.id,
-                symbol="BTCUSDT",
-                start_date=str(df.iloc[0]['startTime']),
-                end_date=str(df.iloc[-1]['startTime']),
-                roi=test_res['roi_percent'],
-                sharpe=test_res['sharpe'],
-                max_drawdown=test_res['max_drawdown'],
-                win_rate=test_res['win_rate'] * 100,
-                trades_count=test_res['total_trades'],
-                metrics_json=json.dumps(res),
-                timestamp=time.time()
-            )
-            db.add(br)
-            db.commit()
-
-            return RedirectResponse(f"/backtest/result/{br.id}", status_code=303)
-
+             return RedirectResponse("/strategies", status_code=303)
     except Exception as e:
         print(f"Quick Backtest Error: {e}")
-        traceback.print_exc()
         return RedirectResponse("/strategies", status_code=303)
 
 @app.get("/synopsis", response_class=HTMLResponse)
 async def synopsis_page(request: Request, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
-
-    # Fetch Data
     symbol = "BTCUSDT"
     de = DataEngine()
-
     indicators = {}
     ml_prob = 0.5
     sentiment = "UNKNOWN"
     explanation = "Data unavailable."
-
     try:
         df = de.fetch_ohlcv(symbol, interval="60", limit=100)
-
         if not df.empty:
             df = IndicatorEngine.add_indicators(df)
             last_row = df.iloc[-1]
-
-            # Format Indicators
             indicators = {
                 "Close Price": last_row['close'],
                 "RSI (14)": f"{last_row.get('RSI_14', 0):.2f}",
             }
             if 'MACD_12_26_9' in last_row:
                  indicators['MACD'] = f"{last_row['MACD_12_26_9']:.2f}"
-
-            # ML Prediction
             if MLEngine:
                 try:
                     ml_agent = MLEngine()
                     ml_prob = ml_agent.predict_probability(df)
                 except Exception as e:
                     print(f"ML Error: {e}")
-
-            # Sentiment
             if settings and settings.gemini_api_key:
                 ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
                 try:
@@ -808,9 +774,7 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
                     sentiment = "ERROR"
             else:
                  ai_agent = AISentimentAgent(gemini_api_key=None)
-                 sentiment = ai_agent.get_market_sentiment() # Uses fallback
-
-            # AI Explanation
+                 sentiment = ai_agent.get_market_sentiment()
             if settings and settings.gemini_api_key:
                 ai_agent = AISentimentAgent(gemini_api_key=settings.gemini_api_key)
                 prompt = (
@@ -826,18 +790,11 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
                     explanation = "AI Explanation unavailable (API Error)."
             else:
                 explanation = "Configure Gemini API Key in settings to get AI-generated strategy explanation."
-
     except Exception as e:
         print(f"Synopsis Error: {e}")
         explanation = f"Error generating synopsis: {e}"
-        # Provide fallback data to prevent template crash
         if not indicators:
              indicators = {"Status": "Unavailable"}
-
-    except Exception as e:
-        print(f"Synopsis Error: {e}")
-        explanation = f"Error generating synopsis: {e}"
-
     return templates.TemplateResponse("synopsis.html", {
         "request": request,
         "indicators": indicators,
@@ -850,13 +807,10 @@ async def synopsis_page(request: Request, db: Session = Depends(get_db)):
 async def train_ml():
     if not MLEngine:
         return {"error": "ML dependencies not installed"}
-
     de = DataEngine()
     df = de.fetch_ohlcv("BTCUSDT", interval="60", limit=1000)
-
     ml = MLEngine()
     score = ml.train_model(df)
-
     response = RedirectResponse("/synopsis", status_code=303)
     response.set_cookie(key="flash_message", value=f"ML Model Retrained. Accuracy: {score:.2f}")
     return response
@@ -873,11 +827,8 @@ async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int 
     warehouse = DataWarehouse()
     df = warehouse.load_data(symbol, interval, limit=limit)
     if df.empty:
-        # Fallback to DataEngine which fetches from API
         de = DataEngine()
         df = de.fetch_ohlcv(symbol, interval=interval, limit=limit)
-
-    # Handle NaN
     df = df.where(pd.notnull(df), None)
     return df.to_dict(orient="records")
 
@@ -885,16 +836,11 @@ async def get_history(symbol: str = "BTCUSDT", interval: str = "60", limit: int 
 async def lab_page(request: Request, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
     strategies = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.name).all()
-
-    # Get max generation
     max_gen_strat = db.query(Strategy).order_by(Strategy.generation.desc()).first()
     max_gen = max_gen_strat.generation if max_gen_strat else 0
-
-    # Get Best Performer
     best_strat = db.query(BacktestResult, Strategy)\
         .join(Strategy, BacktestResult.strategy_id == Strategy.id)\
         .order_by(BacktestResult.roi.desc()).first()
-
     return templates.TemplateResponse("lab.html", {
         "request": request,
         "settings": settings,
@@ -902,3 +848,28 @@ async def lab_page(request: Request, db: Session = Depends(get_db)):
         "max_gen": max_gen,
         "best_strat": best_strat
     })
+@app.get("/api/strategy_matrix")
+async def get_strategy_matrix(db: Session = Depends(get_db)):
+    """
+    Returns data for the Strategy Performance Matrix (Scatter Plot).
+    X: Total Equity (or ROI)
+    Y: Max Drawdown
+    Color: Win Rate? Or Generation?
+    """
+    results = db.query(BacktestResult, Strategy).join(Strategy, BacktestResult.strategy_id == Strategy.id).all()
+
+    data = []
+    for br, strat in results:
+        # Avoid huge drawdowns breaking chart
+        dd = abs(br.max_drawdown)
+        if dd > 100: dd = 100
+
+        data.append({
+            "id": strat.id,
+            "name": strat.name,
+            "roi": round(br.roi, 2),
+            "drawdown": round(dd, 2),
+            "win_rate": round(br.win_rate, 2),
+            "generation": strat.generation
+        })
+    return data

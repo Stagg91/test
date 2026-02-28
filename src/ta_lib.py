@@ -100,3 +100,18 @@ class TALib:
             f'DMP_{length}': plus_di,
             f'DMN_{length}': minus_di
         })
+
+    @classmethod
+    def get_inventory(cls):
+        """
+        Returns a list of available indicators and their metadata for AI prompts.
+        """
+        return [
+            {"name": "sma", "params": {"length": 50}, "desc": "Simple Moving Average", "outputs": ["SMA_{length}"]},
+            {"name": "ema", "params": {"length": 20}, "desc": "Exponential Moving Average", "outputs": ["EMA_{length}"]},
+            {"name": "rsi", "params": {"length": 14}, "desc": "Relative Strength Index (0-100)", "outputs": ["RSI_{length}"]},
+            {"name": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}, "desc": "Moving Average Convergence Divergence", "outputs": ["MACD_{fast}_{slow}_{signal}", "MACDs_...", "MACDh_..."]},
+            {"name": "bbands", "params": {"length": 20, "std": 2.0}, "desc": "Bollinger Bands", "outputs": ["BBU_{length}_{std}", "BBM_{length}_{std}", "BBL_{length}_{std}"]},
+            {"name": "atr", "params": {"length": 14}, "desc": "Average True Range (Volatility)", "outputs": ["ATR_{length}"]},
+            {"name": "adx", "params": {"length": 14}, "desc": "Average Directional Index (Trend Strength)", "outputs": ["ADX_{length}", "DMP_{length}", "DMN_{length}"]}
+        ]
