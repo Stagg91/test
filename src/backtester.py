@@ -76,22 +76,89 @@ class Backtester:
                 total_trades = entries
                 win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
             else:
+                total_trades = 0
+                win_rate = 0
+
+            # Extract detailed trade log
+            trades_log = []
+            if total_trades > 0:
+                # Group by trade_id
+                # entry_time is first timestamp, exit_time is last timestamp
+                # entry_price is open price of first candle (approx) or close of previous?
+                # Let's use close price of the signal candle as entry price for simplicity in vectorized
+
+                # A trade exists where position != 0.
+                # Each group of consecutive non-zero positions is a trade.
+                # However, our 'trade_id' increments on position change.
+                # Let's iterate over unique trade_ids
+
+                # Better vectorized approach:
+                # Get start and end indices of each trade_id
+                # trade_id 0 is usually 'no position' at start if we fillna(0)
+
+                for t_id in df['trade_id'].unique():
+                    if t_id == 0: continue # Initial 0 state if no position
+
+                    t_slice = df[df['trade_id'] == t_id]
+                    if t_slice.empty: continue
+
+                    # If position is 0, it's a flat period, skip
+                    if t_slice['position'].iloc[0] == 0: continue
+
+                    start_row = t_slice.iloc[0]
+                    end_row = t_slice.iloc[-1]
+
+                    entry_time = str(start_row['startTime'])
+                    # For exit time, if it's the last candle of data, it's still open
+                    is_open = (t_slice.index[-1] == df.index[-1])
+                    exit_time = str(end_row['startTime']) if not is_open else "Open"
+
+                    entry_price = float(start_row['close'])
+                    exit_price = float(end_row['close'])
+
+                    # PnL
+                    # (Exit - Entry) / Entry for Long
+                    # We only support Long for now in this logic (signal 1)
+                    # If signal -1 (Short), logic would be reversed.
+                    # Assuming Long Only for now based on 'signal == 1' logic earlier.
+
+                    pnl_pct = (exit_price - entry_price) / entry_price * 100
+                    pnl_abs = (exit_price - entry_price) * (self.initial_balance / entry_price) # Approx
+
+                    trades_log.append({
+                        "trade_id": int(t_id),
+                        "entry_time": entry_time,
+                        "exit_time": exit_time,
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "pnl_percent": round(pnl_pct, 2),
+                        "pnl_abs": round(pnl_abs, 2),
+                        "status": "OPEN" if is_open else "CLOSED"
+                    })
+
+            else:
                 win_rate = 0
                 total_trades = 0
+                trades_log = []
 
             # Fitness
             dd_abs = abs(max_drawdown)
             if dd_abs < 0.001: dd_abs = 0.001
             fitness = total_return / dd_abs
 
+            # Sanitize Equity Curve (handle NaN/Inf)
+            equity_curve = df['equity'].fillna(self.initial_balance).tolist()
+            equity_curve = [float(x) if np.isfinite(x) else self.initial_balance for x in equity_curve]
+
             return {
-                "roi_percent": total_return,
-                "max_drawdown": max_drawdown,
-                "sharpe": sharpe,
-                "win_rate": win_rate,
-                "total_trades": total_trades,
-                "fitness": fitness,
-                "equity_curve": df['equity'].tolist()
+                "roi_percent": float(total_return),
+                "max_drawdown": float(max_drawdown),
+                "sharpe": float(sharpe),
+                "win_rate": float(win_rate),
+                "total_trades": int(total_trades),
+                "fitness": float(fitness),
+                "equity_curve": equity_curve,
+                "trades": trades_log
             }
 
         except Exception as e:

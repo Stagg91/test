@@ -524,16 +524,35 @@ async def run_backtest(
         return results[0:10]
 
 @app.get("/strategies", response_class=HTMLResponse)
-async def strategies_page(request: Request, db: Session = Depends(get_db)):
-    all_strats = db.query(Strategy).order_by(Strategy.generation.desc(), Strategy.created_at.desc()).all()
+async def strategies_page(request: Request, sort_by: str = "roi", db: Session = Depends(get_db)):
+    # Fetch all strategies
+    all_strats = db.query(Strategy).all()
+
+    # Fetch latest BacktestResult for each strategy
+    # Subquery to get max timestamp per strategy
+    from sqlalchemy import func
+    subq = db.query(
+        BacktestResult.strategy_id,
+        func.max(BacktestResult.timestamp).label('max_ts')
+    ).group_by(BacktestResult.strategy_id).subquery()
+
+    latest_results = db.query(BacktestResult).join(
+        subq,
+        (BacktestResult.strategy_id == subq.c.strategy_id) &
+        (BacktestResult.timestamp == subq.c.max_ts)
+    ).all()
+
+    # Map Strategy ID -> Result
+    result_map = {r.strategy_id: r for r in latest_results}
+
+    # Attach result to strategy object (temporary attribute)
+    for s in all_strats:
+        s.latest_result = result_map.get(s.id)
 
     # Organize into trees
-    # Map ID -> Strategy
     strat_map = {s.id: s for s in all_strats}
-
-    # Identify Roots (No parent or parent not in current set)
     roots = []
-    children_map = {} # ParentID -> List of Children
+    children_map = {}
 
     for s in all_strats:
         if s.parent_id and s.parent_id in strat_map:
@@ -543,13 +562,41 @@ async def strategies_page(request: Request, db: Session = Depends(get_db)):
         else:
             roots.append(s)
 
-    # Sort roots by generation desc
-    roots.sort(key=lambda x: x.generation, reverse=True)
+    # Sorting Logic
+    def get_sort_key(s):
+        if sort_by == "roi":
+            return s.latest_result.roi if s.latest_result else -9999
+        elif sort_by == "drawdown":
+             # We want low drawdown to be first? Or high? Usually 'best' first.
+             # If sort reverse=True, we want closest to 0 (e.g. -5 > -50).
+             return s.latest_result.max_drawdown if s.latest_result else -9999
+        elif sort_by == "trades":
+            return s.latest_result.trades_count if s.latest_result else 0
+        elif sort_by == "gen":
+            return s.generation
+        else:
+            return s.created_at
+
+    roots.sort(key=get_sort_key, reverse=True)
+
+    # Calculate Matrix Data (Scatter Plot)
+    matrix_data = []
+    for s in all_strats:
+        if s.latest_result:
+            matrix_data.append({
+                "x": s.latest_result.max_drawdown, # X-axis: Risk (Drawdown)
+                "y": s.latest_result.roi,          # Y-axis: Reward (ROI)
+                "text": s.name,
+                "size": s.latest_result.trades_count,
+                "color": s.generation
+            })
 
     return templates.TemplateResponse("strategies.html", {
         "request": request,
         "strategies": roots,
-        "children_map": children_map
+        "children_map": children_map,
+        "sort_by": sort_by,
+        "matrix_data": json.dumps(matrix_data)
     })
 
 @app.post("/strategies/delete")

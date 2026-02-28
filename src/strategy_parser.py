@@ -5,8 +5,50 @@ from src.strategies.schemas import StrategyRecipe
 from src.logger import LabLogger
 from src.ta_lib import TALib
 import asyncio
+import re
 
 class StrategyParser:
+    def _detect_missing_indicators(self, logic_string: str) -> list:
+        """
+        Scans logic string for common indicator patterns like RSI_14, EMA_50
+        and returns a list of configs to run.
+        """
+        configs = []
+        # RSI_(\d+)
+        for match in re.finditer(r'RSI_(\d+)', logic_string, re.IGNORECASE):
+            length = int(match.group(1))
+            configs.append({'name': 'rsi', 'params': {'length': length}, 'col_name': f'RSI_{length}'})
+
+        # ADX_(\d+)
+        for match in re.finditer(r'ADX_(\d+)', logic_string, re.IGNORECASE):
+            length = int(match.group(1))
+            # col_name=None because ADX returns a DF with correct column names already
+            configs.append({'name': 'adx', 'params': {'length': length}, 'col_name': None})
+
+        # MACD_(\d+)_(\d+)_(\d+) (Handle MACD, MACDs, MACDh variants)
+        for match in re.finditer(r'(?:MACD|MACDs|MACDh)_(\d+)_(\d+)_(\d+)', logic_string, re.IGNORECASE):
+            fast = int(match.group(1))
+            slow = int(match.group(2))
+            signal = int(match.group(3))
+            configs.append({'name': 'macd', 'params': {'fast': fast, 'slow': slow, 'signal': signal}, 'col_name': None})
+
+        # EMA_(\d+)
+        for match in re.finditer(r'EMA_(\d+)', logic_string, re.IGNORECASE):
+            length = int(match.group(1))
+            configs.append({'name': 'ema', 'params': {'length': length}, 'col_name': f'EMA_{length}'})
+
+        # SMA_(\d+)
+        for match in re.finditer(r'SMA_(\d+)', logic_string, re.IGNORECASE):
+            length = int(match.group(1))
+            configs.append({'name': 'sma', 'params': {'length': length}, 'col_name': f'SMA_{length}'})
+
+        # WMA_(\d+)
+        for match in re.finditer(r'WMA_(\d+)', logic_string, re.IGNORECASE):
+            length = int(match.group(1))
+            configs.append({'name': 'wma', 'params': {'length': length}, 'col_name': f'WMA_{length}'})
+
+        return configs
+
     def parse_and_execute(self, df: pd.DataFrame, strategy: StrategyRecipe) -> pd.DataFrame:
         """
         Applies indicators and logic to the DataFrame.
@@ -24,44 +66,57 @@ class StrategyParser:
         # Work on a copy
         df = df.copy()
 
-        # 1. Apply Indicators
+        # 0. Auto-Detect Missing Indicators from Logic
+        detected_configs = []
+        logic_str = f"{strategy.entry_logic} {strategy.exit_logic}"
+        detected_configs.extend(self._detect_missing_indicators(logic_str))
+
+        # Convert explicit Strategy indicators to config format
+        indicators_to_run = []
         for ind in strategy.indicators:
+            indicators_to_run.append({
+                'name': ind.name,
+                'params': ind.params,
+                'col_name': ind.col_name
+            })
+
+        # Add detected ones if not present
+        existing_cols = {i['col_name'] for i in indicators_to_run if i['col_name']}
+        for d in detected_configs:
+            if d['col_name'] not in existing_cols and d['col_name'] not in df.columns:
+                 indicators_to_run.append(d)
+                 # log_sync(f"Auto-detected indicator: {d['col_name']}")
+
+        # 1. Apply Indicators
+        for ind in indicators_to_run:
             try:
-                if not hasattr(TALib, ind.name):
-                    msg = f"Indicator '{ind.name}' not found in TALib."
+                name = ind['name']
+                params = ind['params']
+                col_name = ind.get('col_name')
+
+                if not hasattr(TALib, name):
+                    msg = f"Indicator '{name}' not found in TALib."
                     print(f"Warning: {msg}")
                     log_sync(msg)
                     continue
 
                 # Call the indicator function from TALib
-                method = getattr(TALib, ind.name)
+                method = getattr(TALib, name)
 
-                # Check signature to see if it needs OHLC or just Close
-                # Simplified: pass kwargs + series/ohlc based on name
-                # Most indicators take 'close' (series)
-                params = ind.params.copy()
-
-                if ind.name in ['atr', 'adx']:
+                if name in ['atr', 'adx']:
                     # These need high, low, close
                     result = method(df['high'], df['low'], df['close'], **params)
                 else:
                     # Assume single series (usually close)
-                    # Some might need 'volume' later, but for now mostly close
                     target = df['close']
-                    # If params specifies source column? Not supported yet.
                     result = method(target, **params)
 
                 # Explicit renaming:
-                if ind.col_name:
+                if col_name:
                     if isinstance(result, pd.Series):
-                        df[ind.col_name] = result
+                        df[col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
+                        result = result.add_prefix(f"{col_name}_")
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:

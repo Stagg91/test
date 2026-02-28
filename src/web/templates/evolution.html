@@ -2,51 +2,96 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Genetic Evolution Engine</h2>
+    <h2><i class="fa-solid fa-dna text-gold"></i> Genetic Evolution Engine</h2>
 
-    <div class="card mb-4">
-        <div class="card-header">Evolve Generation</div>
-        <div class="card-body">
-            <p>Select a generation to evaluate and breed from. This will run backtests on all strategies in that generation, select the best ones, and use AI to mutate them into the next generation.</p>
-            <form action="/evolution/run_generation" method="post">
-                <div class="mb-3">
-                    <label>Generation ID</label>
-                    <input type="number" name="generation" class="form-control" value="0">
+    <!-- Control Panel -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-dark border-gold h-100">
+                <div class="card-header border-secondary text-gold">Evolve Generation</div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Select a generation to evaluate and breed from. This will:
+                        <ol class="small text-muted">
+                            <li>Run backtests on all strategies in that generation.</li>
+                            <li>Select top performers based on Fitness (ROI / Drawdown).</li>
+                            <li>Use AI to mutate them into the next generation.</li>
+                        </ol>
+                    </p>
+                    <form action="/evolution/run_generation" method="post" class="d-flex align-items-center">
+                        <div class="input-group">
+                            <span class="input-group-text bg-black text-white border-secondary">Gen ID</span>
+                            <input type="number" name="generation" class="form-control bg-black text-white border-secondary" value="0">
+                            <button type="submit" class="btn btn-gold">Run Evolution Cycle</button>
+                        </div>
+                    </form>
                 </div>
-                <button type="submit" class="btn btn-warning">Run Evolution Cycle</button>
-            </form>
+            </div>
+        </div>
+        <div class="col-md-6">
+             <div class="card bg-dark border-secondary h-100">
+                 <div class="card-header border-secondary">How It Works</div>
+                 <div class="card-body small text-muted">
+                     <p>The Genetic Engine mimics natural selection:</p>
+                     <ul>
+                         <li><strong>Evaluation:</strong> Strategies are tested on historical data.</li>
+                         <li><strong>Selection:</strong> "Fittest" strategies (High ROI, Low Risk) survive.</li>
+                         <li><strong>Mutation:</strong> AI tweaks the logic of survivors to create children.</li>
+                     </ul>
+                     <p class="mb-0"><em>Enable "Auto-Evolve" in Settings for hands-free optimization.</em></p>
+                 </div>
+             </div>
         </div>
     </div>
 
+    <!-- Performance Table -->
     <h3>Performance Matrix (Top 50)</h3>
-    <table class="table table-striped table-sm">
-        <thead>
-            <tr>
-                <th>Strat ID</th>
-                <th>Name</th>
-                <th>Gen</th>
-                <th>ROI %</th>
-                <th>Sharpe</th>
-                <th>Max DD %</th>
-                <th>Win Rate %</th>
-                <th>Trades</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for res, strat in results %}
-            <tr>
-                <td>{{ strat.id }}</td>
-                <td>{{ strat.name }}</td>
-                <td>{{ strat.generation }}</td>
-                <td class="{% if res.roi > 0 %}text-success{% else %}text-danger{% endif %}">{{ "%.2f"|format(res.roi) }}</td>
-                <td>{{ "%.2f"|format(res.sharpe) }}</td>
-                <td>{{ "%.2f"|format(res.max_drawdown) }}</td>
-                <td>{{ "%.2f"|format(res.win_rate) }}</td>
-                <td>{{ res.trades_count }}</td>
-                <td><a href="/backtest/result/{{ res.id }}" class="btn btn-sm btn-primary">Details</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table table-dark table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Strat ID</th>
+                    <th>Name / Lineage</th>
+                    <th>Gen</th>
+                    <th>Fitness</th>
+                    <th>ROI %</th>
+                    <th>Sharpe</th>
+                    <th>Max DD %</th>
+                    <th>Win Rate %</th>
+                    <th>Trades</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for res, strat in results %}
+                <tr>
+                    <td><span class="badge bg-secondary">{{ strat.id }}</span></td>
+                    <td>
+                        <div class="text-truncate" style="max-width: 200px;" title="{{ strat.name }}">
+                            {{ strat.name }}
+                        </div>
+                        {% if strat.parent_id %}
+                        <small class="text-muted"><i class="fa-solid fa-arrow-turn-up fa-rotate-90"></i> Child of #{{ strat.parent_id }}</small>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-info text-dark">{{ strat.generation }}</span></td>
+                    <td>
+                        <!-- Fitness is ROI / abs(DD) -->
+                        {% set dd = res.max_drawdown|abs %}
+                        {% if dd < 0.001 %}{% set dd = 0.001 %}{% endif %}
+                        {% set fit = res.roi / dd %}
+                        <span class="fw-bold text-warning">{{ "%.2f"|format(fit) }}</span>
+                    </td>
+                    <td class="{% if res.roi > 0 %}text-success{% else %}text-danger{% endif %} fw-bold">{{ "%.2f"|format(res.roi) }}%</td>
+                    <td>{{ "%.2f"|format(res.sharpe) }}</td>
+                    <td class="text-danger">{{ "%.2f"|format(res.max_drawdown) }}%</td>
+                    <td>{{ "%.1f"|format(res.win_rate) }}%</td>
+                    <td>{{ res.trades_count }}</td>
+                    <td><a href="/backtest/result/{{ res.id }}" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-chart-line"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}
