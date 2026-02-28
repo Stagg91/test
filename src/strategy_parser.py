@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import traceback
+import re
 from src.strategies.schemas import StrategyRecipe
 from src.logger import LabLogger
 from src.ta_lib import TALib
@@ -56,16 +57,52 @@ class StrategyParser:
                     if isinstance(result, pd.Series):
                         df[ind.col_name] = result
                     elif isinstance(result, pd.DataFrame):
-                        # For DF results (MACD, BB), we might want to rename specific columns?
-                        # Or just concat. If user provided col_name for a multi-col indicator, it's ambiguous.
-                        # Usually col_name is used for single series.
-                        # If DF, we ignore col_name or prefix it?
-                        # Let's prefix
-                        result = result.add_prefix(f"{ind.col_name}_")
+                        # Refined Prefix Logic for Multi-Column Results (MACD, BB, ADX)
+                        # Goal: Avoid double prefixing (e.g. MACD_MACD_12_26_9) while ensuring uniqueness.
+
+                        rename_map = {}
+                        for col in result.columns:
+                            # 1. If the column ALREADY starts with the user-requested name, keep it.
+                            # Case: ind.col_name="MACD", col="MACD_12_26_9" -> Keep "MACD_12_26_9"
+                            if col.startswith(ind.col_name):
+                                rename_map[col] = col
+
+                            # 2. Special Case for MACD components (MACDs, MACDh)
+                            elif ind.name.lower() == "macd" and ("MACD" in col or "MACDs" in col or "MACDh" in col):
+                                rename_map[col] = col
+
+                            # 3. Special Case for ADX components (DMP, DMN)
+                            # Case: ind.col_name="ADX_14", col="DMP_14" -> Keep "DMP_14"
+                            elif ind.name.lower() == "adx" and ("DMP" in col or "DMN" in col):
+                                rename_map[col] = col
+
+                            else:
+                                # Fallback: Prefix it
+                                rename_map[col] = f"{ind.col_name}_{col}"
+
+                        result = result.rename(columns=rename_map)
                         df = pd.concat([df, result], axis=1)
                 else:
                      if result is not None:
-                        df = pd.concat([df, result], axis=1)
+                         # Handle multi-column result merge (e.g. MACD returning 3 cols)
+                        if isinstance(result, pd.DataFrame):
+                            # Check for column collisions
+                            to_concat = []
+                            for col in result.columns:
+                                if col not in df.columns:
+                                    to_concat.append(result[col])
+                            if to_concat:
+                                df = pd.concat([df] + to_concat, axis=1)
+                        elif isinstance(result, pd.Series):
+                            # Force generated name to ensure consistency (e.g. RSI_14)
+                            # and prevent accidental overwrite of 'close' if series name is inherited.
+                            if result.name and result.name in df.columns and result.name not in ['close', 'open', 'high', 'low', 'volume']:
+                                # If it has a unique name already, use it
+                                df[result.name] = result
+                            else:
+                                param_str = "_".join([str(v) for v in params.values()])
+                                default_name = f"{ind.name.upper()}_{param_str}" if param_str else ind.name.upper()
+                                df[default_name] = result
 
             except Exception as e:
                 msg = f"Error calculating indicator '{ind.name}': {e}"
@@ -89,20 +126,39 @@ class StrategyParser:
         entry_logic = strategy.entry_logic
         exit_logic = strategy.exit_logic
 
-        # Additional Sanitization: Replace . with _ in logic strings if they match column pattern
-        # This handles cases where logic string has "2.0" but column was renamed to "2_0"
-        # However, we must be careful not to replace actual floats like 0.5
-        # The rename_map handles columns that *existed* and were renamed.
-        # But if the user typed "BBU_20_2.0" manually in the logic, we need to map it.
-
+        # Sanitization 1: Replace known renamed columns (e.g. "BBU_2.0" -> "BBU_2_0")
         for old, new in rename_map.items():
             entry_logic = entry_logic.replace(old, new)
             exit_logic = exit_logic.replace(old, new)
+
+        # Sanitization 2: Regex replace float dots in identifiers (e.g. BBU_20_2.0 -> BBU_20_2_0)
+        # We look for patterns where a dot is preceded by a digit and followed by a digit, inside a word?
+        # Actually, standard variables in Python/Pandas eval cannot have dots.
+        # So "BBU_20_2.0" is interpreted as attribute access or syntax error if BBU_20_2 is not an object.
+        # We want to replace "2.0" with "2_0" ONLY if it is part of a variable name (like BBU_20_2.0).
+        # But "2.0" as a numeric literal (e.g. RSI > 50.5) MUST stay as 50.5.
+
+        # Heuristic: Replace dot with underscore if it follows a letter/underscore/digit sequence that looks like a variable prefix?
+        # Better: Since we know TALib converts std dev floats to `_`, e.g. `2_0`, we should apply the same transformation to the logic string.
+        # Regex: Find patterns like `_(\d+)\.(\d+)` (underscore, digits, dot, digits) and replace with `_\1_\2`.
+        # Example: `BBU_20_2.0` -> `BBU_20_2_0`.
+
+        def replace_dots_in_vars(text):
+            # Regex to match `_2.0` style patterns at the end of words
+            # matches: _ followed by digits, then dot, then digits.
+            return re.sub(r'_(\d+)\.(\d+)', r'_\1_\2', text)
+
+        entry_logic = replace_dots_in_vars(entry_logic)
+        exit_logic = replace_dots_in_vars(exit_logic)
 
         # 4. Evaluate Logic
         df['signal'] = 0
 
         try:
+            # Debug: Print available columns
+            # print(f"DEBUG: Available Columns for Logic: {df.columns.tolist()}")
+            # print(f"DEBUG: Entry Logic: {entry_logic}")
+
             entry_mask = df.eval(entry_logic)
             exit_mask = df.eval(exit_logic)
 
@@ -113,13 +169,13 @@ class StrategyParser:
             # Log signal counts
             buy_count = entry_mask.sum()
             sell_count = exit_mask.sum()
-            log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
+            # log_sync(f"Logic Evaluated: {buy_count} Buys, {sell_count} Sells generated.")
 
         except Exception as e:
             msg = f"Logic Evaluation Error: {e}"
             print(msg)
-            traceback.print_exc()
-            log_sync(msg, {"entry": entry_logic, "exit": exit_logic})
+            # traceback.print_exc() # Less noise
+            log_sync(msg, {"entry": entry_logic, "exit": exit_logic, "cols": df.columns.tolist()})
 
         # Final Clean: Remove duplicate columns if any crept in
         df = df.loc[:, ~df.columns.duplicated()]
